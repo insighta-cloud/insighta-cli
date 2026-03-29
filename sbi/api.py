@@ -99,6 +99,7 @@ class OrderGroup:
     items: list = field(default_factory=list)
     cash_deposits: list[CashDeposit] = field(default_factory=list)
     exchange_rate: float | None = None
+    memo: str = ""
 
 
 def load_order_groups(filepath: str) -> list[OrderGroup]:
@@ -114,6 +115,7 @@ def load_order_groups(filepath: str) -> list[OrderGroup]:
                     group_id=gid,
                     currency=row.get("settle_currency", row["currency"]),
                     exchange_rate=float(rate_val) if rate_val else None,
+                    memo=row.get("memo", "").strip() if row.get("memo") else "",
                 )
             groups[gid].items.append({
                 "id": row["ticker"],
@@ -207,6 +209,8 @@ class InsightaClient:
             "payment_currency": order_group.currency,
             "items": order_group.items,
         }
+        if order_group.memo:
+            body["memo"] = order_group.memo
         if order_group.currency != portfolio_currency and order_group.exchange_rate:
             body["custom_exchange_rate"] = order_group.exchange_rate
             body["is_custom_exchange_rate"] = True

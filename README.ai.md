@@ -100,11 +100,72 @@ insighta upload \
 | `--description` | str | "Imported from brokerage trade history." | 説明 |
 | `--currency` | str | "JPY" (ja) / "KRW" (ko) | 通貨 (USD/JPY/KRW) |
 | `--budget` | float | 10000.0 | 初期予算 |
+
+> **予算の目安**: `output/order.csv` の全注文コストを合算して算出してください。
+> ポートフォリオ通貨が JPY の場合、USD 建て注文は `price × quantity × rate` で円換算し、
+> JPY 建て注文と合計した金額を予算に設定します。rate が空の注文は直近の rate.csv の値で概算してください。
+
 | `--target-return` | float | 0.1 | 目標リターン (%) |
 | `--start-date` | str | today | 開始日 (YYYY-MM-DD) |
 | `--target-date` | str | today + 5y | 目標日 (YYYY-MM-DD) |
 | `--credentials` | str | "credentials.yaml" | API キーファイルパス |
 | `--output-json` | flag | false | 結果を JSON で stdout 出力 |
+
+## Memo File
+
+`upload --memo-file` でグループ別メモを一括適用できます。AI エージェントが `output/order.csv` を確認してメモを生成するワークフローを想定しています。
+
+### memo.csv format
+
+```csv
+order_group,memo
+1,新NISA枠でインデックスコア構築
+2,配当利回り4%超で定期積立ルール発動
+5,公益→金融へセクターローテーション 利上げ局面で金融セクター有利と判断
+```
+
+### Writing Good Memos
+
+メモは「何を買った/売った」ではなく、**その時点での運用判断の根拠** を記載してください。
+マークダウンが使えます。
+
+| ❌ Bad | ✅ Good |
+|--------|--------|
+| `QQQ 18株購入` | `新NISA枠でインデックスコア構築` |
+| `SPYD追加購入` | `配当利回り4%超で定期積立ルール発動` |
+| `AES売却+JPM購入` | `公益→金融へセクターローテーション 利上げ局面で金融セクター有利と判断` |
+
+同様に、`--name` と `--description` も運用方針を反映してください。
+
+| Field | ❌ Bad | ✅ Good |
+|-------|--------|--------|
+| `--name` | `SBI US Stocks 2026` | `米国株 長期成長+高配当` |
+| `--description` | `SBI証券からインポート` | 運用仕様をマークダウンで記載（下記例参照） |
+
+`--description` の例:
+
+```markdown
+## 運用方針
+- **コア**: S&P500 (SPY) + NASDAQ (QQQ)
+- **配当**: SPYD で高配当利回り確保
+- **サテライト**: 個別株 (JPM, MAR, RACE)
+
+## 目標
+- 年率 10% リターン
+- 配当利回り 3% 以上
+```
+
+### Usage
+
+```bash
+# 1. prepare で order.csv 生成 (グループ番号確定)
+insighta prepare -ni --name "My Portfolio" --currency JPY --budget 100000
+
+# 2. order.csv を確認して memo.csv を作成
+
+# 3. upload 時に memo.csv を適用
+insighta upload --credentials credentials.yaml --config upload.yaml --memo-file memo.csv -y
+```
 
 ## JSON Output
 
@@ -177,13 +238,27 @@ ls input/history/*.html
 
 # 4. Run full pipeline
 insighta wizard -ni \
-  --name "US Stocks 2025" \
+  --name "米国株 長期成長+高配当" \
+  --description "## 運用方針\n- コア: SPY+QQQ\n- 配当: SPYD\n- 目標: 年率10%" \
   --currency JPY \
   --budget 500000 \
   --credentials credentials.yaml \
   --output-json
 
-# 5. Parse JSON result from stdout
+# 5. Generate memo.csv from order.csv (AI analyzes trade intent)
+# memo.csv:
+# order_group,memo
+# 1,新NISA枠でインデックスコア構築
+# 2,配当利回り4%超で定期積立ルール発動
+
+# 6. Upload with memos
+insighta upload \
+  --credentials credentials.yaml \
+  --config upload.yaml \
+  --memo-file memo.csv \
+  -y --output-json
+
+# 7. Parse JSON result from stdout
 # {"status": "success", "portfolio_id": "...", "url": "...", ...}
 ```
 

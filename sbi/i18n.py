@@ -113,6 +113,7 @@ MESSAGES = {
         "prepare_grouping_date": "日付+通貨",
         "prepare_grouping_individual": "個別",
         "prepare_done": "{order} + {yaml} 生成完了",
+        "prepare_memo_prompt": "メモ (空欄でスキップ)",
         # resume
         "resume_history": "前回のパース結果 (output/history.csv) が見つかりました。再利用しますか？",
         "resume_prepare": "前回のアップロード準備ファイル (upload.yaml + order.csv) が見つかりました。再利用しますか？",
@@ -222,6 +223,7 @@ MESSAGES = {
         "prepare_grouping_date": "날짜+통화",
         "prepare_grouping_individual": "개별",
         "prepare_done": "{order} + {yaml} 생성 완료",
+        "prepare_memo_prompt": "메모 (빈칸으로 스킵)",
         # resume
         "resume_history": "이전 파싱 결과 (output/history.csv) 가 있습니다. 재사용하시겠습니까?",
         "resume_prepare": "이전 업로드 준비 파일 (upload.yaml + order.csv) 이 있습니다. 재사용하시겠습니까?",

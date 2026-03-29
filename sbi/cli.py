@@ -249,6 +249,34 @@ def _run_verify() -> bool:
     return True
 
 
+def _update_order_memos(order_path: str, memos: dict[str, str]):
+    """order.csvのmemo列をmemos dictで上書きする。"""
+    import csv
+    rows = []
+    with open(order_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        for row in reader:
+            gid = row["order_group"]
+            if gid in memos:
+                row["memo"] = memos[gid]
+            rows.append(row)
+    with open(order_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
+
+
+def _load_memo_file(path: str) -> dict[str, str]:
+    """memo CSV (order_group,memo) を読み込んでdictで返す。"""
+    import csv
+    memos: dict[str, str] = {}
+    with open(path, "r", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            memos[row["order_group"]] = row.get("memo", "")
+    return memos
+
+
 @cli.command()
 def verify():
     """CSV集計とHTML実際保有を照合する。"""
@@ -428,15 +456,15 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
         group_map = {k: old_to_new[v] for k, v in group_map.items() if v in old_to_new}
         group_counter = new_counter
 
-    # --- Write order.csv ---
+    # --- Write order.csv (memo column empty initially) ---
     order_out = f"{OUTPUT_DIR}/order.csv"
     with open(order_out, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["order_group", "ticker", "quantity", "price", "currency", "settle_currency", "rate", "price_type", "timestamp"])
+        w.writerow(["order_group", "ticker", "quantity", "price", "currency", "settle_currency", "rate", "price_type", "timestamp", "memo"])
         for row in order_rows:
             w.writerow([
                 row["order_group"], row["ticker"], row["quantity"],
-                row["price"], row["currency"], row["settle_currency"], row["rate"], row["price_type"], row["timestamp"],
+                row["price"], row["currency"], row["settle_currency"], row["rate"], row["price_type"], row["timestamp"], "",
             ])
 
     # --- Write cash_deposits.csv ---
@@ -527,8 +555,11 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
             merge_cash_deposits(preview_groups, preview_deposits)
         except FileNotFoundError:
             pass
-    for g in preview_groups:
-        preview = Table(title=f"Group {g.group_id}  ({g.currency})", show_lines=False)
+    total_groups = len(preview_groups)
+    group_memos: dict[str, str] = {}
+    for idx, g in enumerate(preview_groups, 1):
+        console.rule()
+        preview = Table(title=f"Group {g.group_id}/{total_groups}  ({g.currency})", show_lines=False)
         preview.add_column("Ticker")
         preview.add_column("Qty", justify="right")
         preview.add_column("Price", justify="right")
@@ -542,6 +573,13 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
                 ticker = d.ticker or ""
                 preview.add_row(ticker or label, f"[cyan]{d.amount:+,.2f}[/cyan]", d.currency or "")
         console.print(preview)
+        memo = _prompt(m["prepare_memo_prompt"], default="")
+        if memo:
+            group_memos[g.group_id] = memo
+
+    # --- Update order.csv with memos ---
+    if group_memos:
+        _update_order_memos(order_out, group_memos)
 
     console.print(Panel(f"[bold green]{m['prepare_done'].format(order=order_out, yaml=yaml_out)}[/bold green]"))
 
@@ -572,6 +610,8 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
                 "payment_currency": g.currency,
                 "items": g.items,
             }
+            if g.memo:
+                body["memo"] = g.memo
             if g.cash_deposits:
                 body["cash_deposits"] = [
                     {k: v for k, v in {
@@ -594,8 +634,9 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
 @click.option("--config", required=True, help="Path to upload.yaml")
 @click.option("--yes", "-y", is_flag=True, help="確認プロンプトをスキップ")
 @click.option("--lang", default="ja", hidden=True)
+@click.option("--memo-file", default="", help="グループ別メモCSV (order_group,memo)")
 @click.option("--output-json", is_flag=True, help="結果をJSONで出力")
-def upload(credentials, config, yes, lang, output_json):
+def upload(credentials, config, yes, lang, memo_file, output_json):
     """アップロード: upload.yaml + order.csvをInsighta APIに送信する。"""
     from rich.table import Table
     from rich.panel import Panel
@@ -605,6 +646,15 @@ def upload(credentials, config, yes, lang, output_json):
     creds = Credentials.from_file(credentials)
     upload_cfg = UploadConfig.from_file(config)
     client = InsightaClient(creds)
+
+    # --- Apply memo file to order.csv before loading ---
+    if memo_file:
+        try:
+            memos = _load_memo_file(memo_file)
+            _update_order_memos(upload_cfg.order_file, memos)
+            console.print(f"[dim]Memos applied from {memo_file}: {len(memos)} groups[/dim]")
+        except FileNotFoundError:
+            console.print(f"[yellow]Warning: {memo_file} not found, skipping memos.[/yellow]")
 
     groups = load_order_groups(upload_cfg.order_file)
     if not groups:
@@ -927,7 +977,7 @@ def wizard(non_interactive, p_name, p_desc, p_currency, p_budget, p_target_retur
         return
 
     ctx = click.get_current_context()
-    ctx.invoke(upload, credentials=cred_path, config="upload.yaml", yes=True, lang=locale, output_json=output_json)
+    ctx.invoke(upload, credentials=cred_path, config="upload.yaml", yes=True, lang=locale, memo_file="", output_json=output_json)
     console.print(Panel(m["all_done"], border_style="green"))
 
 
