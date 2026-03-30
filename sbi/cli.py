@@ -742,6 +742,7 @@ def upload(credentials, config, yes, lang, memo_file, output_json):
             try:
                 client.send_order(portfolio_id, group, upload_cfg.currency)
                 success += 1
+                progress.console.print(f"[dim]✓ Group {i}/{total}[/dim]")
             except requests.exceptions.HTTPError as e:
                 progress.stop()
                 console.print(f"[red]Group {group.group_id} failed: {e}[/red]")
