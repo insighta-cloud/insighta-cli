@@ -249,24 +249,6 @@ def _run_verify() -> bool:
     return True
 
 
-def _update_order_memos(order_path: str, memos: dict[str, str]):
-    """order.csvのmemo列をmemos dictで上書きする。"""
-    import csv
-    rows = []
-    with open(order_path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames
-        for row in reader:
-            gid = row["order_group"]
-            if gid in memos:
-                row["memo"] = memos[gid]
-            rows.append(row)
-    with open(order_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
-        w.writeheader()
-        w.writerows(rows)
-
-
 def _load_memo_file(path: str) -> dict[str, str]:
     """memo CSV (order_group,memo) を読み込んでdictで返す。"""
     import csv
@@ -417,54 +399,38 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
             "timestamp": ts,
         })
 
-    # --- Assign order_group ---
+    # --- Assign group_dt (대표 UTC timestamp) ---
+    # group_dt = 그룹 내 첫 번째 주문의 timestamp (UTC, YYYY-MM-DD HH:MM:SS)
     if do_group:
-        # date + currency 기준으로 그룹핑
-        group_map = {}
-        group_counter = 0
+        group_dt_map: dict[tuple, str] = {}  # (date_key, settle_currency) -> group_dt
         for row in order_rows:
             key = (row["date_key"], row["settle_currency"])
-            if key not in group_map:
-                group_counter += 1
-                group_map[key] = str(group_counter)
-            row["order_group"] = group_map[key]
+            if key not in group_dt_map:
+                group_dt_map[key] = row["timestamp"] or row["date_key"] + " 00:00:00"
+            row["group_dt"] = group_dt_map[key]
     else:
-        for i, row in enumerate(order_rows, 1):
-            row["order_group"] = str(i)
+        for row in order_rows:
+            row["group_dt"] = row["timestamp"] or row["date_key"] + " 00:00:00"
 
     # --- Merge same ticker+price within group ---
-    merged_rows: dict[tuple[str, str, str], dict] = {}
+    merged_rows: dict[tuple, dict] = {}
     for row in order_rows:
-        key = (row["order_group"], row["ticker"], row["price"])
+        key = (row["group_dt"], row["ticker"], row["price"])
         if key in merged_rows:
             merged_rows[key]["quantity"] = str(int(merged_rows[key]["quantity"]) + int(row["quantity"]))
         else:
             merged_rows[key] = dict(row)
-    order_rows = list(merged_rows.values())
-    order_rows.sort(key=lambda r: r["timestamp"] or "")
+    order_rows = sorted(merged_rows.values(), key=lambda r: r["timestamp"] or "")
 
-    # --- Reassign group numbers in chronological order ---
-    old_to_new: dict[str, str] = {}
-    new_counter = 0
-    for row in order_rows:
-        old_gid = row["order_group"]
-        if old_gid not in old_to_new:
-            new_counter += 1
-            old_to_new[old_gid] = str(new_counter)
-        row["order_group"] = old_to_new[old_gid]
-    if do_group:
-        group_map = {k: old_to_new[v] for k, v in group_map.items() if v in old_to_new}
-        group_counter = new_counter
-
-    # --- Write order.csv (memo column empty initially) ---
+    # --- Write order.csv ---
     order_out = f"{OUTPUT_DIR}/order.csv"
     with open(order_out, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["order_group", "ticker", "quantity", "price", "currency", "settle_currency", "rate", "price_type", "timestamp", "memo"])
+        w.writerow(["group_dt", "ticker", "quantity", "price", "currency", "settle_currency", "rate", "price_type", "timestamp"])
         for row in order_rows:
             w.writerow([
-                row["order_group"], row["ticker"], row["quantity"],
-                row["price"], row["currency"], row["settle_currency"], row["rate"], row["price_type"], row["timestamp"], "",
+                row["group_dt"], row["ticker"], row["quantity"],
+                row["price"], row["currency"], row["settle_currency"], row["rate"], row["price_type"], row["timestamp"],
             ])
 
     # --- Write cash_deposits.csv ---
@@ -474,30 +440,25 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
         cash_deposits_out = f"{OUTPUT_DIR}/cash_deposits.csv"
         with open(cash_deposits_out, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["order_group", "type", "amount", "currency", "ticker", "timestamp"])
+            w.writerow(["group_dt", "type", "amount", "currency", "ticker", "timestamp"])
             for d in deposits:
-                d_key = _date_key(d.dt)
-                og = group_map.get((d_key, d.cur), group_map.get((d_key, currency)))
-                if not og:
-                    group_counter += 1
-                    og = str(group_counter)
-                    group_map[(d_key, d.cur)] = og
+                import re as _re
                 ts = ""
-                if d.dt:
-                    import re as _re
-                    try:
-                        if _re.match(r"\d{4}-\d{2}-\d{2}T", d.dt):
-                            dt_obj = datetime.fromisoformat(d.dt)
-                            if dt_obj.tzinfo is None:
-                                dt_obj = dt_obj.replace(tzinfo=tz)
-                        elif _re.match(r"\d{4}/\d+/\d+ \d+:\d+", d.dt):
-                            dt_obj = datetime.strptime(d.dt, "%Y/%m/%d %H:%M").replace(tzinfo=tz)
-                        else:
-                            dt_obj = datetime.strptime(d.dt[:10], "%Y/%m/%d").replace(tzinfo=tz)
-                        ts = dt_obj.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                    except (ValueError, AttributeError):
-                        pass
-                w.writerow([og, d.type, float(d.amount), d.cur, d.ticker, ts])
+                dt_obj = None
+                try:
+                    if _re.match(r"\d{4}-\d{2}-\d{2}T", d.dt):
+                        dt_obj = datetime.fromisoformat(d.dt)
+                        if dt_obj.tzinfo is None:
+                            dt_obj = dt_obj.replace(tzinfo=tz)
+                    elif _re.match(r"\d{4}/\d+/\d+ \d+:\d+", d.dt):
+                        dt_obj = datetime.strptime(d.dt, "%Y/%m/%d %H:%M").replace(tzinfo=tz)
+                    else:
+                        dt_obj = datetime.strptime(d.dt[:10], "%Y/%m/%d").replace(tzinfo=tz)
+                    ts = dt_obj.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                except (ValueError, AttributeError):
+                    pass
+                # group_dt = deposit 자체의 timestamp
+                w.writerow([ts, d.type, float(d.amount), d.cur, d.ticker, ts])
 
     # --- Build portfolio items ---
     from .api import fetch_ticker_info
@@ -525,7 +486,8 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
     ]
 
     # --- Write upload.yaml ---
-    files_config = {"order": order_out}
+    memo_out = f"{OUTPUT_DIR}/memo.csv"
+    files_config = {"order": order_out, "memo": memo_out}
     if cash_deposits_out:
         files_config["cash_deposits"] = cash_deposits_out
     upload_config = {
@@ -542,7 +504,7 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
         },
         "files": files_config,
     }
-    yaml_out = "upload.yaml"
+    yaml_out = f"{OUTPUT_DIR}/upload.yaml"
     with open(yaml_out, "w", encoding="utf-8") as f:
         yaml.dump(upload_config, f, allow_unicode=True, default_flow_style=False)
 
@@ -558,23 +520,24 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
             table.add_row(m["prepare_budget_count"], str(budget_count))
         if dividend_count:
             table.add_row(m["prepare_dividend_count"], str(dividend_count))
-    group_count = len(set(r["order_group"] for r in order_rows))
+    group_count = len(set(r["group_dt"] for r in order_rows))
     table.add_row(m["prepare_groups"], str(group_count))
     table.add_row(m["prepare_grouping"], m["prepare_grouping_date"] if do_group else m["prepare_grouping_individual"])
     console.print(table)
 
     # --- Group preview ---
-    from .api import load_order_groups, load_cash_deposits, merge_cash_deposits
-    preview_groups = load_order_groups(order_out)
+    from .api import load_order_groups, load_cash_deposits, merge_and_sort_groups
+    preview_orders = load_order_groups(order_out)
+    preview_deposits = {}
     if cash_deposits_out:
         try:
             preview_deposits = load_cash_deposits(cash_deposits_out)
-            merge_cash_deposits(preview_groups, preview_deposits)
         except FileNotFoundError:
             pass
+    preview_groups = merge_and_sort_groups(preview_orders, preview_deposits, {})
     total_groups = len(preview_groups)
     group_memos: dict[str, str] = {}
-    for idx, g in enumerate(preview_groups, 1):
+    for g in preview_groups:
         console.rule()
         preview = Table(title=f"Group {g.group_id}/{total_groups}  ({g.currency})", show_lines=False)
         preview.add_column("Ticker")
@@ -594,9 +557,13 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
         if memo:
             group_memos[g.group_id] = memo
 
-    # --- Update order.csv with memos ---
-    if group_memos:
-        _update_order_memos(order_out, group_memos)
+    # --- Write memo.csv (group_id = 순번, merge_and_sort_groups 기준) ---
+    memo_out = f"{OUTPUT_DIR}/memo.csv"
+    with open(memo_out, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["order_group", "memo"])
+        for gid, memo in group_memos.items():
+            w.writerow([gid, memo])
 
     console.print(Panel(f"[bold green]{m['prepare_done'].format(order=order_out, yaml=yaml_out)}[/bold green]"))
 
@@ -648,7 +615,7 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
 
 @cli.command()
 @click.option("--credentials", required=True, help="Path to credentials.yaml")
-@click.option("--config", required=True, help="Path to upload.yaml")
+@click.option("--config", required=True, help="Path to upload.yaml (default: output/upload.yaml)")
 @click.option("--yes", "-y", is_flag=True, help="確認プロンプトをスキップ")
 @click.option("--lang", default="ja", hidden=True)
 @click.option("--memo-file", default="", help="グループ別メモCSV (order_group,memo)")
@@ -658,34 +625,36 @@ def upload(credentials, config, yes, lang, memo_file, output_json):
     from rich.table import Table
     from rich.panel import Panel
     from rich.progress import Progress
-    from .api import Credentials, UploadConfig, InsightaClient, load_order_groups, load_cash_deposits, merge_cash_deposits
+    from .api import Credentials, UploadConfig, InsightaClient, load_order_groups, load_cash_deposits, merge_and_sort_groups
 
     creds = Credentials.from_file(credentials)
     upload_cfg = UploadConfig.from_file(config)
     client = InsightaClient(creds)
 
-    # --- Apply memo file to order.csv before loading ---
-    if memo_file:
+    memo_path = memo_file or upload_cfg.memo_file
+    memos = {}
+    if memo_path:
         try:
-            memos = _load_memo_file(memo_file)
-            _update_order_memos(upload_cfg.order_file, memos)
-            console.print(f"[dim]Memos applied from {memo_file}: {len(memos)} groups[/dim]")
+            memos = _load_memo_file(memo_path)
+            console.print(f"[dim]Memos loaded from {memo_path}: {len(memos)} groups[/dim]")
         except FileNotFoundError:
-            console.print(f"[yellow]Warning: {memo_file} not found, skipping memos.[/yellow]")
+            console.print(f"[yellow]Warning: {memo_path} not found, skipping memos.[/yellow]")
 
-    groups = load_order_groups(upload_cfg.order_file)
-    if not groups:
+    orders = load_order_groups(upload_cfg.order_file)
+    if not orders:
         console.print("[red]注文データが見つかりません。[/red]")
         return
 
+    deposits = {}
     if upload_cfg.cash_deposits_file:
         try:
             deposits = load_cash_deposits(upload_cfg.cash_deposits_file)
-            merge_cash_deposits(groups, deposits)
             deposit_count = sum(len(v) for v in deposits.values())
             console.print(f"[dim]Cash deposits loaded: {deposit_count} entries[/dim]")
         except FileNotFoundError:
             console.print(f"[yellow]Warning: {upload_cfg.cash_deposits_file} not found, skipping.[/yellow]")
+
+    groups = merge_and_sort_groups(orders, deposits, memos)
 
     order_groups = [g for g in groups if g.items]
     total_items = sum(len(g.items) for g in order_groups)
@@ -865,7 +834,7 @@ def wizard(non_interactive, p_name, p_desc, p_currency, p_budget, p_target_retur
 
     # --- Check for previous results ---
     history_csv_exists = os.path.exists("output/history.csv")
-    prepare_exists = os.path.exists("upload.yaml") and os.path.exists("output/order.csv")
+    prepare_exists = os.path.exists("output/upload.yaml") and os.path.exists("output/order.csv")
 
     skip_parse = False
     skip_prepare = False
@@ -978,7 +947,7 @@ def wizard(non_interactive, p_name, p_desc, p_currency, p_budget, p_target_retur
                    p_budget=p_budget, p_target_return=p_target_return,
                    p_start_date=p_start_date, p_target_date=p_target_date)
 
-        if not os.path.exists("upload.yaml") or not os.path.exists("output/order.csv"):
+        if not os.path.exists("output/upload.yaml") or not os.path.exists("output/order.csv"):
             return
 
     if not _confirm(m["step4_confirm"], default=True):
@@ -1003,7 +972,7 @@ def wizard(non_interactive, p_name, p_desc, p_currency, p_budget, p_target_retur
         return
 
     ctx = click.get_current_context()
-    ctx.invoke(upload, credentials=cred_path, config="upload.yaml", yes=True, lang=locale, memo_file="", output_json=output_json)
+    ctx.invoke(upload, credentials=cred_path, config="output/upload.yaml", yes=True, lang=locale, memo_file="", output_json=output_json)
     console.print(Panel(m["all_done"], border_style="green"))
 
 

@@ -79,7 +79,7 @@ insighta
 ```bash
 insighta parse --rate 155                    # 固定為替レート指定
 insighta parse --rate-file input/rate.csv    # 期間別為替レートCSV
-insighta upload --credentials credentials.yaml --config upload.yaml
+insighta upload --credentials credentials.yaml --config output/upload.yaml
 ```
 
 ---
@@ -129,8 +129,8 @@ Insighta Cloud のポートフォリオは **運用記録** です。
 | `AES売却+JPM購入` | `公益→金融へセクターローテーション 利上げ局面で金融セクター有利と判断` |
 | `SHY新規購入` | `金利ピーク見込みで短期債ETF編入 ポートフォリオの守備力強化` |
 
-> 💡 対話式ウィザードでは `prepare` 実行時にグループごとにメモを入力できます。
-> 🤖 AI エージェント利用時は `upload --memo-file output/memo.csv` で一括適用できます。詳細は [README.ai.md](README.ai.md) を参照。
+> 💡 対話式ウィザードでは `prepare` 実行時にグループごとにメモを入力できます。入力したメモは `output/memo.csv` に保存され、`upload` 時に自動で適用されます。
+> 🤖 AI エージェント利用時は `prepare` 後に `output/memo.csv` を生成して `upload` してください。詳細は [README.ai.md](README.ai.md) を参照。
 
 ---
 

@@ -26,8 +26,9 @@ insighta-portfolio-importer/
 │   └── rate.csv        # 期間別為替レート (任意)
 ├── output/
 │   ├── history.csv     # parse 結果
-│   ├── order.csv       # prepare 結果 (API送信用)
-│   └── cash_deposits.csv
+│   ├── order.csv       # prepare 結果 (注文グループ、キー: group_dt)
+│   ├── cash_deposits.csv  # prepare 結果 (入金・配当、キー: group_dt)
+│   └── memo.csv        # グループ別メモ (prepare 対話入力 or AI 生成)
 ├── templates/          # CSV/YAML テンプレート
 ├── credentials.yaml    # API キー (gitignore済み)
 ├── upload.yaml         # prepare 結果 (ポートフォリオ設定)
@@ -41,7 +42,7 @@ Step 1: HTML配置 (input/history/, input/summary/)
     ↓
 Step 2: parse (HTML → output/history.csv) + verify (任意)
     ↓
-Step 3: prepare (output/history.csv → upload.yaml + output/order.csv)
+Step 3: prepare (output/history.csv → upload.yaml + output/order.csv + output/cash_deposits.csv + output/memo.csv)
     ↓
 Step 4: upload (upload.yaml → Insighta API)
 ```
@@ -86,7 +87,7 @@ insighta prepare \
 # Step 4: upload
 insighta upload \
   --credentials credentials.yaml \
-  --config upload.yaml \
+  --config output/upload.yaml \
   --yes \
   --output-json
 ```
@@ -113,18 +114,23 @@ insighta upload \
 
 ## Memo File
 
-`upload --memo-file` でグループ別メモを一括適用できます。AI エージェントが `output/order.csv` を確認してメモを生成するワークフローを想定しています。
+`prepare` 実行時のグループプレビューで入力したメモ、または AI が生成したメモは `output/memo.csv` に保存されます。
+`upload` 時に自動で読み込まれ、各グループに適用されます。
+`--memo-file` オプションで別ファイルを指定することもできます（override）。
 
 ### memo.csv format
 
+`prepare` のプレビュー順番（1, 2, 3...）がキーです。主文・配当・入出金すべてが時系列にマージされた状態の順番です。
+
 ```csv
 order_group,memo
-1,新NISA枠でインデックスコア構築
-2,配当利回り4%超で定期積立ルール発動
-5,公益→金融へセクターローテーション 利上げ局面で金融セクター有利と判断
+1,米国株投資開始 AAPL打診買い
+2,DIA打診買い ダウ高配当ETFで分散
+3,
+4,配当利回り4%超で定期積立ルール発動
 ```
 
-ファイルは `output/memo.csv` に保存してください。
+メモが不要なグループは行ごと省略できます（連続した行番号でなくても可）。
 
 ### Writing Good Memos
 
@@ -157,16 +163,21 @@ order_group,memo
 - 配当利回り 3% 以上
 ```
 
-### Usage
+### AI ワークフロー
 
 ```bash
-# 1. prepare で order.csv 生成 (グループ番号確定)
+# 1. prepare で order.csv + cash_deposits.csv 生成
+#    (主文・配当・入出金が時系列にマージされたプレビューが表示される)
 insighta prepare -ni --name "My Portfolio" --currency JPY --budget 100000
 
-# 2. order.csv を確認して memo.csv を作成
+# 2. output/order.csv + output/cash_deposits.csv を見て memo.csv を作成
+#    グループ順番は prepare のプレビュー出力の 1, 2, 3... に対応
 
-# 3. upload 時に memo.csv を適用
-insighta upload --credentials credentials.yaml --config upload.yaml --memo-file output/memo.csv -y
+# 3. upload (output/memo.csv を自動読み込み)
+insighta upload --credentials credentials.yaml --config output/upload.yaml -y
+
+# または別ファイルを指定
+insighta upload --credentials credentials.yaml --config output/upload.yaml --memo-file output/memo.csv -y
 ```
 
 ## JSON Output
@@ -196,7 +207,7 @@ insighta upload --credentials credentials.yaml --config upload.yaml --memo-file 
 最初からやり直したい場合は、該当ファイルを削除してください:
 
 ```bash
-rm output/history.csv output/order.csv output/cash_deposits.csv upload.yaml
+rm output/history.csv output/order.csv output/cash_deposits.csv output/upload.yaml output/memo.csv
 ```
 
 ## Prerequisites
@@ -247,17 +258,14 @@ insighta wizard -ni \
   --credentials credentials.yaml \
   --output-json
 
-# 5. Generate memo.csv from order.csv (AI analyzes trade intent)
-# memo.csv:
-# order_group,memo
-# 1,新NISA枠でインデックスコア構築
-# 2,配当利回り4%超で定期積立ルール発動
+# 5. output/order.csv + output/cash_deposits.csv を見て memo.csv を作成
+#    グループ順番は prepare プレビューの 1, 2, 3... に対応
+#    主文・配当・入出金すべてが時系列マージ済み
 
-# 6. Upload with memos
+# 6. upload (output/memo.csv を自動読み込み)
 insighta upload \
   --credentials credentials.yaml \
-  --config upload.yaml \
-  --memo-file output/memo.csv \
+  --config output/upload.yaml \
   -y --output-json
 
 # 7. Parse JSON result from stdout

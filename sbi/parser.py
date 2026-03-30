@@ -27,14 +27,12 @@ def _to_jst_iso(dt_str: str) -> str:
     """'2026/03/19 15:26' → '2026-03-19T15:26:00+09:00'"""
     if not dt_str:
         return ""
-    try:
-        dt = datetime.strptime(dt_str, "%Y/%m/%d %H:%M")
-    except ValueError:
+    for fmt in ("%Y/%m/%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d"):
         try:
-            dt = datetime.strptime(dt_str, "%Y/%m/%d %H:%M:%S")
+            return datetime.strptime(dt_str, fmt).replace(tzinfo=JST).isoformat()
         except ValueError:
-            return dt_str
-    return dt.replace(tzinfo=JST).isoformat()
+            continue
+    return dt_str
 
 
 def _to_decimal(val: str) -> Decimal:
