@@ -307,14 +307,39 @@ def prepare(locale, history_file, seed_file, rate_file, non_interactive,
         return click.confirm(label, default=default)
 
     today = datetime.now().strftime("%Y-%m-%d")
-    target_date_default = datetime.now().replace(year=datetime.now().year + 5).strftime("%Y-%m-%d")
+
+    # Determine earliest date from orders + deposits
+    def _earliest_date() -> str:
+        import csv as _csv, re as _re
+        dates = []
+        for fpath in [history_file or "output/history.csv", seed_file or "input/seed/seed.csv"]:
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    for row in _csv.DictReader(f):
+                        dt = row.get("dt", "")[:10].replace("/", "-")
+                        if _re.match(r"\d{4}-\d{2}-\d{2}", dt):
+                            dates.append(dt)
+            except FileNotFoundError:
+                pass
+        for d in load_deposits():
+            dt = d.dt[:10].replace("/", "-")
+            if _re.match(r"\d{4}-\d{2}-\d{2}", dt):
+                dates.append(dt)
+        return min(dates) if dates else today
+
+    start_date_default = _earliest_date()
+    target_date_default = datetime(
+        int(start_date_default[:4]) + 10,
+        int(start_date_default[5:7]),
+        int(start_date_default[8:10]),
+    ).strftime("%Y-%m-%d")
 
     name = p_name or _prompt(m["prepare_name"], default="My Portfolio")
     description = p_desc or _prompt(m["prepare_desc"], default="Imported from brokerage trade history.")
     currency = p_currency or _prompt(m["prepare_currency"], type=click.Choice(["USD", "KRW", "JPY"]), default=m["default_currency"])
     budget = p_budget or _prompt(m["prepare_budget"], type=float, default=10000.0)
     target_return = p_target_return or _prompt(m["prepare_target_return"], type=float, default=0.1)
-    start_date = p_start_date or _prompt(m["prepare_start_date"], default=today)
+    start_date = p_start_date or _prompt(m["prepare_start_date"], default=start_date_default)
     target_date = p_target_date or _prompt(m["prepare_target_date"], default=target_date_default)
 
     if not history_file:
