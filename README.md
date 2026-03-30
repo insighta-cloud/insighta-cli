@@ -60,6 +60,10 @@ API キーは https://insighta.cloud/settings から取得できます。
 insighta
 ```
 
+## 4. 実行画面
+
+![upload preview](docs/images/upload-preview.png)
+
 ## 4. コマンド一覧
 
 | コマンド | 説明 |
