@@ -5,6 +5,8 @@
 [Insighta Cloud](https://insighta.cloud) へのポートフォリオ一括登録を支援するCLIツールです。
 証券会社の取引履歴から注文データを抽出し、検証・分析したうえで Insighta API へまとめてアップロードできます。
 
+![upload preview](docs/images/upload-preview.png)
+
 - **パース**: 証券会社のHTMLから注文履歴を抽出 → CSV変換
 - **検証**: CSV集計と実際の保有状況の照合
 - **分析**: 実現/未実現損益・総合ROI
@@ -59,10 +61,6 @@ API キーは https://insighta.cloud/settings から取得できます。
 ```bash
 insighta
 ```
-
-## 4. 実行画面
-
-![upload preview](docs/images/upload-preview.png)
 
 ## 4. コマンド一覧
 
