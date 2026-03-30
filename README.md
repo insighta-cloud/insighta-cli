@@ -165,7 +165,22 @@ dt,type,amount,cur,ticker,rate
 | `ticker` | 配当金の場合のみ銘柄指定 |
 | `rate` | 為替レート（任意。空欄の場合は rate.csv から自動取得） |
 
-### 5.3 rate CSV
+### 5.4 ratio CSV
+
+銘柄ごとのポートフォリオ比率を指定。`input/ratio.csv` に配置。
+
+```csv
+ticker,ratio
+SPY,0.4
+QQQ,0.3
+AAPL,0.2
+```
+
+- 1 を 100% として指定（例: `0.4` = 40%）
+- ファイルがない場合は全銘柄を均等配分
+- 現金比率はサーバー側で自動計算されるため指定不要
+
+### 5.5 rate CSV
 
 通貨ペアごとに期間とレートを定義。`input/rate.csv` に配置。
 

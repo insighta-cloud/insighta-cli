@@ -23,7 +23,8 @@ insighta-portfolio-importer/
 │   ├── summary/        # 保有銘柄 HTML (検証用・任意)
 │   ├── seed/           # ツール導入前の保有 CSV (任意)
 │   ├── deposit/        # 入金・配当 CSV (任意)
-│   └── rate.csv        # 期間別為替レート (任意)
+│   ├── rate.csv        # 期間別為替レート (任意)
+│   └── ratio.csv       # 銘柄別ポートフォリオ比率 (任意)
 ├── output/
 │   ├── history.csv     # parse 結果
 │   ├── order.csv       # prepare 結果 (注文グループ、キー: group_dt)
@@ -107,8 +108,8 @@ insighta upload \
 > JPY 建て注文と合計した金額を予算に設定します。rate が空の注文は直近の rate.csv の値で概算してください。
 
 | `--target-return` | float | 0.1 | 目標リターン (%) |
-| `--start-date` | str | today | 開始日 (YYYY-MM-DD) |
-| `--target-date` | str | today + 5y | 目標日 (YYYY-MM-DD) |
+| `--start-date` | str | 最初の注文/配当日 | 開始日 (YYYY-MM-DD) |
+| `--target-date` | str | start-date + 10y | 目標日 (YYYY-MM-DD) |
 | `--credentials` | str | "credentials.yaml" | API キーファイルパス |
 | `--output-json` | flag | false | 結果を JSON で stdout 出力 |
 
