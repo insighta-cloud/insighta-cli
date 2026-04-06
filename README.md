@@ -23,6 +23,7 @@
 ## 注意事項
 
 - 取引履歴のHTMLはユーザー自身がブラウザから手動で保存する必要があります
+- 為替取引履歴CSVは https://member.c.sbisec.co.jp/banking/fc/activity-history からダウンロードして `input/currency_exchange/` に配置してください
 - 現在は海外株式口座のみ対応しています（国内株・投信等は未対応）
 - SBI証券のHTML構造が変更された場合、パースが正しく動作しない可能性があります
 - アップロード前に必ず `verify` コマンドでデータの正確性を確認してください
@@ -164,6 +165,16 @@ dt,type,amount,cur,ticker,rate
 | `cur` | 通貨（JPY, USD など） |
 | `ticker` | 配当金の場合のみ銘柄指定 |
 | `rate` | 為替レート（任意。空欄の場合は rate.csv から自動取得） |
+
+### 5.3 currency_exchange CSV
+
+SBI証券の外貨積立・為替取引履歴CSVを自動取り込み。`input/currency_exchange/` に配置。
+
+https://member.c.sbisec.co.jp/banking/fc/activity-history からCSVをダウンロードして配置するだけで自動認識されます。
+
+- ファイルエンコーディング: Shift_JIS（ダウンロードしたままで可）
+- 1件の約定 → JPY出金 + 外貨入金（または外貨出金 + JPY入金）の2イベントとして処理
+- `買付`（JPY→外貨）・`売付`（外貨→JPY）の両方に対応
 
 ### 5.4 ratio CSV
 

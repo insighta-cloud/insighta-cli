@@ -13,6 +13,7 @@ HISTORY_DIR = f"{INPUT_DIR}/history"
 SUMMARY_DIR = f"{INPUT_DIR}/summary"
 SEED_DIR = f"{INPUT_DIR}/seed"
 DEPOSIT_DIR = f"{INPUT_DIR}/deposit"
+EXCHANGE_DIR = f"{INPUT_DIR}/currency_exchange"
 
 JST = timezone(timedelta(hours=9))
 
@@ -170,6 +171,63 @@ def _is_sbi_distribution(filepath: str) -> bool:
         return False
 
 
+def _parse_sbi_exchange(filepath: str) -> list[Deposit]:
+    """SBI証券 為替取引注文履歴CSV (Shift_JIS) をパース.
+
+    1件の約定 → JPY出金 + USD入金 の2つのDepositに変換する。
+    """
+    deposits: list[Deposit] = []
+    with open(filepath, "rb") as f:
+        raw = f.read()
+    content = raw.decode("shift_jis", errors="ignore")
+    lines = content.splitlines()
+    header_idx = None
+    for i, line in enumerate(lines):
+        if "口座区分" in line and "約定レート" in line:
+            header_idx = i
+            break
+    if header_idx is None:
+        return deposits
+    data_text = "\n".join(lines[header_idx:])
+    CURRENCY_MAP = {"米ドル": "USD", "ユーロ": "EUR", "英ポンド": "GBP", "豪ドル": "AUD"}
+    for row in csv.DictReader(data_text.splitlines()):
+        status = row.get("注文状況", "").strip()
+        if status != "約定済":
+            continue
+        dt_raw = row.get("約定日時", "").strip().replace("\n", "")
+        qty_str = row.get("数量", "0").strip().replace(",", "")
+        jpy_str = row.get("受渡金額", "0").strip().replace(",", "")
+        rate_str = row.get("約定レート", "").strip()
+        currency_ja = row.get("通貨", "").strip()
+        order_type = row.get("注文種別", "").strip()
+        foreign_cur = CURRENCY_MAP.get(currency_ja, currency_ja)
+        try:
+            qty = Decimal(qty_str)
+            jpy_amount = Decimal(jpy_str)
+            rate = Decimal(rate_str) if rate_str else None
+        except Exception:
+            continue
+        dt_iso = _to_jst_iso(dt_raw)
+        if order_type == "買付":  # JPY → 外貨
+            deposits.append(Deposit(dt=dt_iso, amount=-jpy_amount, cur="JPY", type="budget", rate=rate))
+            deposits.append(Deposit(dt=dt_iso, amount=qty, cur=foreign_cur, type="budget", rate=rate))
+        elif order_type == "売付":  # 外貨 → JPY
+            deposits.append(Deposit(dt=dt_iso, amount=-qty, cur=foreign_cur, type="budget", rate=rate))
+            deposits.append(Deposit(dt=dt_iso, amount=jpy_amount, cur="JPY", type="budget", rate=rate))
+    return deposits
+
+
+def _is_sbi_exchange(filepath: str) -> bool:
+    """Shift_JISの為替取引注文履歴CSVかどうか判定."""
+    try:
+        with open(filepath, "rb") as f:
+            raw = f.read(512)
+        text = raw.decode("shift_jis", errors="ignore")
+        return "為替取引注文履歴" in text or ("口座区分" in text and "約定レート" in text)
+    except Exception:
+        return False
+
+
 def load_deposits() -> list[Deposit]:
     """input/deposit/*.csv を自動判別して読み込む.
 
@@ -183,6 +241,9 @@ def load_deposits() -> list[Deposit]:
             deposits.extend(_parse_sbi_transfer(fname))
         elif _is_sbi_distribution(fname):
             deposits.extend(_parse_sbi_distribution(fname))
+    for fname in sorted(glob.glob(f"{EXCHANGE_DIR}/*.csv")):
+        if _is_sbi_exchange(fname):
+            deposits.extend(_parse_sbi_exchange(fname))
     return deposits
 
 

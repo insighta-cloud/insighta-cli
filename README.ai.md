@@ -19,12 +19,13 @@ insighta-portfolio-importer/
 │   ├── api.py          # Insighta OpenAPI クライアント
 │   └── i18n.py         # 多言語メッセージ (ja/ko)
 ├── input/
-│   ├── history/        # 取引履歴 HTML (必須)
-│   ├── summary/        # 保有銘柄 HTML (検証用・任意)
-│   ├── seed/           # ツール導入前の保有 CSV (任意)
-│   ├── deposit/        # 入金・配当 CSV (任意)
-│   ├── rate.csv        # 期間別為替レート (任意)
-│   └── ratio.csv       # 銘柄別ポートフォリオ比率 (任意)
+│   ├── history/           # 取引履歴 HTML (必須)
+│   ├── summary/           # 保有銘柄 HTML (検証用・任意)
+│   ├── seed/              # ツール導入前の保有 CSV (任意)
+│   ├── deposit/           # 入金・配当 CSV (任意)
+│   ├── currency_exchange/ # SBI為替取引履歴 CSV (任意, Shift_JIS)
+│   ├── rate.csv           # 期間別為替レート (任意)
+│   └── ratio.csv          # 銘柄別ポートフォリオ比率 (任意)
 ├── output/
 │   ├── history.csv     # parse 結果
 │   ├── order.csv       # prepare 結果 (注文グループ、キー: group_dt)
@@ -281,3 +282,4 @@ insighta upload \
 | `注文データが見つかりません` | `output/order.csv` が空 | parse → prepare を再実行 |
 | `401 Unauthorized` | API キーが無効 | `credentials.yaml` を確認 |
 | verify で差分あり | 履歴期間不足 or seed 不足 | HTML 追加 or `input/seed/` に CSV 追加 |
+| 残高不足区間が表示される | 為替入金データ不足 | https://member.c.sbisec.co.jp/banking/fc/activity-history から CSV をダウンロードして `input/currency_exchange/` に配置 |
