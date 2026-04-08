@@ -680,6 +680,12 @@ def upload(credentials, config, yes, lang, memo_file, output_json):
         console.print("[red]注文データが見つかりません。[/red]")
         return
 
+    # 실제 전송 로그 초기화
+    import os
+    os.makedirs("output", exist_ok=True)
+    with open("output/request_payload.log", "w", encoding="utf-8") as _lf:
+        pass
+
     deposits = {}
     if upload_cfg.cash_deposits_file:
         try:

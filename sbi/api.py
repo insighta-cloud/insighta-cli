@@ -164,11 +164,12 @@ def merge_and_sort_groups(orders: list[OrderGroup], deposits_by_gdt: dict[str, l
         ts = _parse_timestamp(g.group_id)
         return ts if ts is not None else float("inf")
     orders.sort(key=_sort_key)
-    # 메모 적용 + 순번 배정
+    # 순번 배정 후 메모 적용
     for i, g in enumerate(orders, 1):
+        g.group_id = str(i)
+    for g in orders:
         if g.group_id in memos:
             g.memo = memos[g.group_id]
-        g.group_id = str(i)
     return orders
 
 
@@ -196,11 +197,19 @@ class InsightaClient:
         }
 
     def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+        import json as _json
+        import os
         url = f"{self.endpoint}{path}"
-        log.debug("%s %s", method, url)
-        if "json" in kwargs:
-            log.debug("Request body: %s", kwargs["json"])
-            self._last_payload = kwargs["json"]
+        payload = kwargs.get("json")
+        if payload is not None:
+            self._last_payload = payload
+            payload_str = _json.dumps(payload, indent=2, ensure_ascii=False)
+            log.debug("%s %s\n%s", method, url, payload_str)
+            log_path = os.path.join("output", "request_payload.log")
+            with open(log_path, "a", encoding="utf-8") as lf:
+                lf.write(f"=== {method} {url} ===\n{payload_str}\n\n")
+        else:
+            log.debug("%s %s", method, url)
         resp = requests.request(method, url, headers=self.headers, timeout=30, **kwargs)
         log.debug("Response %s: %s", resp.status_code, resp.text)
         resp.raise_for_status()
