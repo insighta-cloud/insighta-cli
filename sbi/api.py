@@ -61,6 +61,7 @@ class UploadConfig:
     items: list = field(default_factory=list)
     cash_deposits_file: str | None = None
     memo_file: str | None = None
+    settings: dict | None = None
 
     @classmethod
     def from_file(cls, path: str) -> "UploadConfig":
@@ -82,6 +83,7 @@ class UploadConfig:
             order_file=files["order"],
             cash_deposits_file=files.get("cash_deposits"),
             memo_file=files.get("memo"),
+            settings=p.get("settings"),
         )
 
 
@@ -241,6 +243,8 @@ class InsightaClient:
             "target_date": config.target_date,
             "items": items,
         }
+        if config.settings:
+            body["settings"] = config.settings
         resp = self._request("POST", "/portfolios", json=body)
         return resp.json()["portfolio_id"]
 
