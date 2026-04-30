@@ -248,6 +248,57 @@ class InsightaClient:
         resp = self._request("POST", "/portfolios", json=body)
         return resp.json()["portfolio_id"]
 
+    # ── read / search / delete ────────────────────────────────────
+
+    def get_portfolios(self) -> list[dict]:
+        """GET /portfolios → return caller's own portfolios."""
+        resp = self._request("GET", "/portfolios")
+        return resp.json()
+
+    def search_portfolios(
+        self,
+        search: str | None = None,
+        country: str | None = None,
+        sort_by: str | None = None,
+        last_item: str | None = None,
+    ) -> dict:
+        """GET /portfolios with search params → search public portfolios."""
+        params = {k: v for k, v in {
+            "search": search, "country": country,
+            "sort_by": sort_by, "last_item": last_item,
+        }.items() if v is not None}
+        resp = self._request("GET", "/portfolios", params=params)
+        return resp.json()
+
+    def delete_portfolio(self, portfolio_id: str) -> None:
+        """DELETE /portfolios/{portfolio_id}."""
+        self._request("DELETE", f"/portfolios/{portfolio_id}")
+
+    def get_nav_history(self, portfolio_id: str) -> dict:
+        """GET /portfolios/{portfolio_id}/nav-history."""
+        resp = self._request("GET", f"/portfolios/{portfolio_id}/nav-history")
+        return resp.json()
+
+    def get_metrics_history(
+        self,
+        portfolio_id: str,
+        metrics: str = "twr",
+        from_t: int | None = None,
+        to_t: int | None = None,
+    ) -> dict:
+        """GET /portfolios/{portfolio_id}/metrics-history."""
+        params: dict = {"metrics": metrics}
+        if from_t is not None:
+            params["from_t"] = str(from_t)
+        if to_t is not None:
+            params["to_t"] = str(to_t)
+        resp = self._request(
+            "GET", f"/portfolios/{portfolio_id}/metrics-history",
+            params=params)
+        return resp.json()
+
+    # ── orders ──────────────────────────────────────────────────
+
     def send_order(self, portfolio_id: str, order_group: OrderGroup, portfolio_currency: str) -> dict:
         """POST /orders → 주문 그룹 하나 전송."""
         body = {
