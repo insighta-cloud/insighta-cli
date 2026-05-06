@@ -34,14 +34,15 @@
 ```bash
 pip install git+https://github.com/insighta-cloud/insighta-cli.git
 ```
-
-または:
+または開発用:
 
 ```bash
 git clone https://github.com/insighta-cloud/insighta-cli.git
 cd insighta-cli
-pip install .
+pip install -e .
 ```
+
+インストール後は `insighta` コマンドが使えます。
 
 ## 2. API キーの設定
 

@@ -281,7 +281,8 @@ pip install git+https://github.com/insighta-cloud/insighta-cli.git
 
 ```bash
 # 1. Install
-pip install git+https://github.com/insighta-cloud/insighta-cli.git
+pip install -e .  # development
+# or: pip install git+https://github.com/insighta-cloud/insighta-cli.git
 
 # 2. Setup config
 cp templates/config.yaml config.yaml
