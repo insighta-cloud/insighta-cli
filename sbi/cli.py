@@ -59,7 +59,7 @@ def parse(obj, rate, rate_file):
                 rate_file = candidate
                 break
 
-    from .parser_v2 import process_sbi_dir
+    from .parser import process_sbi_dir
     result = process_sbi_dir(dirs.sbi, rate_file=rate_file,
                              cache_dir=_os.path.join(dirs._base or ".", ".cache"))
 
@@ -110,8 +110,7 @@ def _run_verify(dirs) -> bool:
     from decimal import Decimal
     from rich.table import Table
     from rich.panel import Panel
-    from .parser import load_csv_rows, aggregate_holdings
-    from .parser_v2 import process_sbi_dir
+    from .parser import load_csv_rows, aggregate_holdings, process_sbi_dir
 
     rows = load_csv_rows(dirs)
     holdings = aggregate_holdings(rows)
@@ -330,8 +329,7 @@ def prepare(obj, locale, history_file, seed_file, rate_file, non_interactive,
     from datetime import datetime
     from rich.table import Table
     from rich.panel import Panel
-    from .parser import load_rate_file, lookup_rate
-    from .parser_v2 import process_sbi_dir
+    from .parser import load_rate_file, lookup_rate, process_sbi_dir
     from .i18n import load_locale, msg
     from datetime import timezone, timedelta
     dirs = obj["dirs"]
@@ -341,6 +339,26 @@ def prepare(obj, locale, history_file, seed_file, rate_file, non_interactive,
     m = msg(locale)
     tz = timezone(timedelta(hours=m["tz_offset"]))
     ni = non_interactive
+
+    # Load project.yaml defaults (CLI options override)
+    proj: dict = {}
+    if _os.path.exists(dirs.project_yaml):
+        with open(dirs.project_yaml, 'r', encoding='utf-8') as f:
+            proj = yaml.safe_load(f) or {}
+    if not p_name:
+        p_name = proj.get('name', '')
+    if not p_desc:
+        p_desc = proj.get('description', '')
+    if not p_currency:
+        p_currency = proj.get('currency', '')
+    if p_budget is None and proj.get('budget') is not None:
+        p_budget = float(proj['budget'])
+    if p_target_return is None and proj.get('target_return') is not None:
+        p_target_return = float(proj['target_return'])
+    if not p_start_date:
+        p_start_date = str(proj.get('start_date', '') or '')
+    if not p_target_date:
+        p_target_date = str(proj.get('target_date', '') or '')
 
     def _prompt(label, default="", **kw):
         if ni:
@@ -570,15 +588,18 @@ def prepare(obj, locale, history_file, seed_file, rate_file, non_interactive,
         ticker_qty[t] = ticker_qty.get(t, 0) + int(r["qty"])
     active_tickers = sorted(t for t, q in ticker_qty.items() if q > 0)
 
-    # Load ratio.csv if exists, otherwise equal distribution
+    # Load ratio: project.yaml > ratio.csv > equal distribution
     ratios: dict[str, float] = {}
-    try:
-        with open(dirs.ratio_csv, "r", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                ratios[row["ticker"]] = float(row["ratio"])
-    except FileNotFoundError:
-        equal = round(1.0 / len(active_tickers), 4) if active_tickers else 0
-        ratios = {t: equal for t in active_tickers}
+    if proj.get("ratio") and isinstance(proj["ratio"], dict):
+        ratios = {k: float(v) for k, v in proj["ratio"].items()}
+    else:
+        try:
+            with open(dirs.ratio_csv, "r", encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    ratios[row["ticker"]] = float(row["ratio"])
+        except FileNotFoundError:
+            equal = round(1.0 / len(active_tickers), 4) if active_tickers else 0
+            ratios = {t: equal for t in active_tickers}
 
     try:
         ticker_info = fetch_ticker_info(active_tickers)
@@ -726,14 +747,13 @@ def prepare(obj, locale, history_file, seed_file, rate_file, non_interactive,
 
 
 @cli.command()
-@click.option("--credentials", default="", help="Path to credentials.yaml")
 @click.option("--config", required=True, help="Path to upload.yaml (default: output/upload.yaml)")
 @click.option("--yes", "-y", is_flag=True, help="確認プロンプトをスキップ")
 @click.option("--lang", default="ja", hidden=True)
 @click.option("--memo-file", default="", help="グループ別メモCSV (order_group,memo)")
 @click.option("--output-json", is_flag=True, help="結果をJSONで出力")
 @click.pass_obj
-def upload(obj, credentials, config, yes, lang, memo_file, output_json):
+def upload(obj, config, yes, lang, memo_file, output_json):
     """アップロード: upload.yaml + order.csvをInsighta APIに送信する。"""
     from rich.table import Table
     from rich.panel import Panel
@@ -743,7 +763,7 @@ def upload(obj, credentials, config, yes, lang, memo_file, output_json):
     dirs = obj["dirs"]
     dirs.ensure_output()
 
-    creds = Credentials.from_file(_resolve_credentials(credentials))
+    creds = Credentials.from_config()
     upload_cfg = UploadConfig.from_file(config)
     client = InsightaClient(creds, output_dir=dirs.output)
 
@@ -890,11 +910,10 @@ def upload(obj, credentials, config, yes, lang, memo_file, output_json):
 @click.option("--target-return", "p_target_return", type=float, default=None, help="目標リターン (%)")
 @click.option("--start-date", "p_start_date", default="", help="開始日 (YYYY-MM-DD)")
 @click.option("--target-date", "p_target_date", default="", help="目標日 (YYYY-MM-DD)")
-@click.option("--credentials", "cred_path_opt", default="", help="credentials.yaml パス")
 @click.option("--output-json", is_flag=True, help="結果をJSONで出力")
 @click.pass_obj
 def wizard(obj, non_interactive, p_name, p_desc, p_currency, p_budget, p_target_return,
-          p_start_date, p_target_date, cred_path_opt, output_json):
+          p_start_date, p_target_date, output_json):
     """対話式ウィザードで全ステップを順番に実行する。"""
     import os
     from rich.panel import Panel
@@ -1069,26 +1088,23 @@ def wizard(obj, non_interactive, p_name, p_desc, p_currency, p_budget, p_target_
     # === Step 4 ===
     console.print(Panel(f"[bold cyan]{m['step4_title']}[/bold cyan]", border_style="cyan"))
 
-    cred_path = cred_path_opt
-    if not cred_path:
-        from .i18n import load_credentials_path
-        cred_path = load_credentials_path() or "credentials.yaml"
-    if not os.path.exists(cred_path):
-        console.print(m["cred_missing"].format(path=cred_path))
+    from .i18n import load_api_key, load_endpoint
+    if not load_api_key() or load_api_key() == "your-api-key-here":
+        console.print(m["cred_missing"].format(path="config.yaml"))
         if output_json:
             import json as _json
-            click.echo(_json.dumps({"status": "error", "message": f"{cred_path} not found"}, ensure_ascii=False))
+            click.echo(_json.dumps({"status": "error", "message": "config.yaml not configured"}, ensure_ascii=False))
         return
 
     from .api import Credentials
-    creds = Credentials.from_file(cred_path)
+    creds = Credentials.from_config()
     console.print(f"  API Key:  [dim]{creds.masked_key}[/dim]")
     console.print(f"  Endpoint: [dim]{creds.endpoint}[/dim]")
     if not _confirm(m["cred_confirm"], default=True):
         return
 
     ctx = click.get_current_context()
-    ctx.invoke(upload, credentials=cred_path, config=dirs.upload_yaml, yes=True, lang=locale, memo_file="", output_json=output_json)
+    ctx.invoke(upload, config=dirs.upload_yaml, yes=True, lang=locale, memo_file="", output_json=output_json)
     console.print(Panel(m["all_done"], border_style="green"))
 
 
@@ -1099,7 +1115,7 @@ def analyze(obj):
     from rich.table import Table
     from rich.panel import Panel
     from .parser import load_csv_rows
-    from .parser_v2 import process_sbi_dir
+    from .parser import process_sbi_dir
     from .analyzer import calc_realized, calc_unrealized, calc_roi
 
     dirs = obj["dirs"]
@@ -1176,48 +1192,30 @@ def analyze(obj):
 # ── config & API query commands ─────────────────────────────────
 
 
-def _resolve_credentials(credentials: str) -> str:
-    """Resolve credentials path: CLI option > config > error."""
-    if credentials:
-        return credentials
-    from .i18n import load_credentials_path
-    saved = load_credentials_path()
-    if saved:
-        return saved
-    raise click.UsageError(
-        "credentials が未指定です。--credentials で指定するか、"
-        "`insighta config --credentials <path>` で保存してください。"
-    )
-
-
-def _make_client(credentials: str):
+def _make_client():
     from .api import Credentials, InsightaClient
-    return InsightaClient(Credentials.from_file(_resolve_credentials(credentials)))
+    return InsightaClient(Credentials.from_config())
 
 
 @cli.command()
-@click.option("--credentials", default="", help="credentials.yaml パスを保存")
-def config(credentials):
-    """デフォルト設定を保存・表示する。"""
-    from .i18n import load_credentials_path, save_credentials_path
-    if credentials:
-        save_credentials_path(credentials)
-        console.print(f"[green]✅ credentials = {credentials}[/green]")
-    else:
-        saved = load_credentials_path()
-        if saved:
-            console.print(f"credentials: {saved}")
-        else:
-            console.print("[dim]未設定。--credentials <path> で保存できます。[/dim]")
+def config():
+    """config.yaml の設定内容を表示する。"""
+    from .i18n import _load_config
+    data = _load_config()
+    if not data:
+        console.print("[dim]config.yaml が見つかりません。cp templates/config.yaml config.yaml で作成してください。[/dim]")
+        return
+    for k, v in data.items():
+        display_v = v if k != "api_key" else (v[:4] + "****" + v[-4:] if len(str(v)) > 8 else "****")
+        console.print(f"  {k}: [dim]{display_v}[/dim]")
 
 
 @cli.command("list-portfolios")
-@click.option("--credentials", default="", help="Path to credentials.yaml")
 @click.option("--output-json", is_flag=True, help="結果をJSONで出力")
-def list_portfolios(credentials, output_json):
+def list_portfolios(output_json):
     """自分のポートフォリオ一覧を取得する。"""
     import json as _json
-    client = _make_client(credentials)
+    client = _make_client()
     data = client.get_portfolios()
     if output_json:
         click.echo(_json.dumps(data, ensure_ascii=False, indent=2))
@@ -1235,16 +1233,15 @@ def list_portfolios(credentials, output_json):
 
 
 @cli.command("search-portfolios")
-@click.option("--credentials", default="", help="Path to credentials.yaml")
 @click.option("--search", default=None, help="検索キーワード")
 @click.option("--country", default=None, help="国コード (例: JP, KR, US)")
 @click.option("--sort-by", default=None, help="ソート基準")
 @click.option("--last-item", default=None, help="ページネーション用 last_item")
 @click.option("--output-json", is_flag=True, help="結果をJSONで出力")
-def search_portfolios_cmd(credentials, search, country, sort_by, last_item, output_json):
+def search_portfolios_cmd(search, country, sort_by, last_item, output_json):
     """公開ポートフォリオを検索する。"""
     import json as _json
-    client = _make_client(credentials)
+    client = _make_client()
     data = client.search_portfolios(search=search, country=country, sort_by=sort_by, last_item=last_item)
     if output_json:
         click.echo(_json.dumps(data, ensure_ascii=False, indent=2))
@@ -1262,27 +1259,25 @@ def search_portfolios_cmd(credentials, search, country, sort_by, last_item, outp
 
 
 @cli.command("delete-portfolio")
-@click.option("--credentials", default="", help="Path to credentials.yaml")
 @click.argument("portfolio_id")
 @click.option("--yes", "-y", is_flag=True, help="確認プロンプトをスキップ")
-def delete_portfolio_cmd(credentials, portfolio_id, yes):
+def delete_portfolio_cmd(portfolio_id, yes):
     """ポートフォリオを削除する。"""
     if not yes and not click.confirm(f"ポートフォリオ {portfolio_id} を削除しますか？"):
         console.print("[yellow]中断しました。[/yellow]")
         return
-    client = _make_client(credentials)
+    client = _make_client()
     client.delete_portfolio(portfolio_id)
     console.print(f"[green]✅ {portfolio_id} を削除しました。[/green]")
 
 
 @cli.command("nav-history")
-@click.option("--credentials", default="", help="Path to credentials.yaml")
 @click.argument("portfolio_id")
 @click.option("--output-json", is_flag=True, help="結果をJSONで出力")
-def nav_history_cmd(credentials, portfolio_id, output_json):
+def nav_history_cmd(portfolio_id, output_json):
     """ポートフォリオのNAV履歴を取得する。"""
     import json as _json
-    client = _make_client(credentials)
+    client = _make_client()
     data = client.get_nav_history(portfolio_id)
     if output_json:
         click.echo(_json.dumps(data, ensure_ascii=False, indent=2))
@@ -1298,16 +1293,15 @@ def nav_history_cmd(credentials, portfolio_id, output_json):
 
 
 @cli.command("metrics-history")
-@click.option("--credentials", default="", help="Path to credentials.yaml")
 @click.argument("portfolio_id")
 @click.option("--metrics", default="twr", help="メトリクス種別 (例: twr)")
 @click.option("--from-t", "from_t", type=int, default=None, help="開始タイムスタンプ (ms)")
 @click.option("--to-t", "to_t", type=int, default=None, help="終了タイムスタンプ (ms)")
 @click.option("--output-json", is_flag=True, help="結果をJSONで出力")
-def metrics_history_cmd(credentials, portfolio_id, metrics, from_t, to_t, output_json):
+def metrics_history_cmd(portfolio_id, metrics, from_t, to_t, output_json):
     """ポートフォリオのメトリクス履歴を取得する。"""
     import json as _json
-    client = _make_client(credentials)
+    client = _make_client()
     data = client.get_metrics_history(portfolio_id, metrics=metrics, from_t=from_t, to_t=to_t)
     if output_json:
         click.echo(_json.dumps(data, ensure_ascii=False, indent=2))

@@ -3,16 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "insighta-portfolio-importer"
+name = "insighta-cli"
 version = "0.1.0"
-description = "Import brokerage trade history into Insighta Cloud portfolios"
+description = "CLI tool for bulk portfolio registration to Insighta Cloud"
 readme = "README.md"
 license = "CC-BY-NC-4.0"
 requires-python = ">=3.10"
 authors = [
     { name = "insighta cloud Inc." },
 ]
-keywords = ["insighta", "portfolio", "brokerage", "importer", "sbi"]
+keywords = ["insighta", "portfolio", "cli", "sbi", "trade-history"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: Other/Proprietary License",
@@ -32,7 +32,7 @@ insighta = "sbi.cli:cli"
 
 [project.urls]
 Homepage = "https://insighta.cloud"
-Repository = "https://github.com/insighta-cloud/insighta-portfolio-importer"
+Repository = "https://github.com/insighta-cloud/insighta-cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sbi"]

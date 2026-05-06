@@ -1,0 +1,16 @@
+name: "My Portfolio"
+description: |
+  ## 運用方針
+  - ここにポートフォリオの運用方針を記載
+
+  ## 目標
+  - 年率リターン目標など
+currency: JPY
+budget: 100000
+target_return: 0.1
+start_date: ""
+target_date: ""
+ratio:
+  SPY: 0.4
+  QQQ: 0.3
+  AAPL: 0.2

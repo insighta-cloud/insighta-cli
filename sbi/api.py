@@ -40,10 +40,15 @@ class Credentials:
         return self.api_key[:4] + "****" + self.api_key[-4:]
 
     @classmethod
-    def from_file(cls, path: str) -> "Credentials":
-        with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        return cls(api_key=data["api_key"], endpoint=data["endpoint"].rstrip("/"))
+    def from_config(cls) -> "Credentials":
+        from .i18n import load_api_key, load_endpoint
+        api_key = load_api_key()
+        endpoint = load_endpoint()
+        if not api_key or api_key == "your-api-key-here":
+            raise ValueError("api_key が config.yaml に設定されていません")
+        if not endpoint:
+            raise ValueError("endpoint が config.yaml に設定されていません")
+        return cls(api_key=api_key, endpoint=endpoint.rstrip("/"))
 
 
 @dataclass

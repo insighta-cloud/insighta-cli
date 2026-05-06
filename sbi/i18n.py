@@ -3,7 +3,7 @@
 import os
 import yaml
 
-CONFIG_PATH = ".insighta.yaml"
+CONFIG_PATH = "config.yaml"
 
 MESSAGES = {
     "ja": {
@@ -76,7 +76,7 @@ MESSAGES = {
         "step3_title": "Step 3/4  アップロード準備",
         "step4_confirm": "\nStep 4 (アップロード) へ進みますか？",
         "step4_title": "Step 4/4  アップロード",
-        "cred_prompt": "credentials.yaml のパス",
+        "cred_prompt": "config.yaml のパス",
         "cred_confirm": "この設定でアップロードしますか？",
         "cred_missing": (
             "[red]{path} が見つかりません。[/red]\n"
@@ -86,7 +86,7 @@ MESSAGES = {
             "     → 開発者モードを ON → API Key発行\n"
             "\n"
             "  2. テンプレートをコピーしてAPI Keyを設定:\n"
-            "     cp templates/credentials.yaml credentials.yaml\n"
+            "     cp templates/config.yaml config.yaml\n"
         ),
         "all_done": "[bold green]🎉 全ステップ完了！[/bold green]",
         # prepare
@@ -186,7 +186,7 @@ MESSAGES = {
         "step3_title": "Step 3/4  업로드 준비",
         "step4_confirm": "\nStep 4 (업로드) 로 진행하시겠습니까?",
         "step4_title": "Step 4/4  업로드",
-        "cred_prompt": "credentials.yaml 경로",
+        "cred_prompt": "config.yaml 경로",
         "cred_confirm": "이 설정으로 업로드하시겠습니까?",
         "cred_missing": (
             "[red]{path} 를 찾을 수 없습니다.[/red]\n"
@@ -196,7 +196,7 @@ MESSAGES = {
             "     → 개발자 모드 ON → API Key 발급\n"
             "\n"
             "  2. 템플릿을 복사하고 API Key를 설정:\n"
-            "     cp templates/credentials.yaml credentials.yaml\n"
+            "     cp templates/config.yaml config.yaml\n"
         ),
         "all_done": "[bold green]🎉 모든 단계 완료![/bold green]",
         # prepare
@@ -254,14 +254,12 @@ def save_locale(locale: str):
     _save_config(data)
 
 
-def load_credentials_path() -> str | None:
-    return _load_config().get("credentials")
+def load_api_key() -> str | None:
+    return _load_config().get("api_key")
 
 
-def save_credentials_path(path: str):
-    data = _load_config()
-    data["credentials"] = path
-    _save_config(data)
+def load_endpoint() -> str | None:
+    return _load_config().get("endpoint")
 
 
 def msg(locale: str) -> dict:

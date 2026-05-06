@@ -1,9 +1,8 @@
 # Workspaces (input/output per portfolio)
 workspaces/*
 
-credentials.yaml
-!templates/credentials.yaml
-.insighta.yaml
+config.yaml
+!templates/config.yaml
 
 __pycache__/
 *.pyc

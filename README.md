@@ -1,16 +1,16 @@
 # insighta CLI
 
-> 🤖 AI エージェントで操作する場合は [README.ai.md](README.ai.md) を参照してください。
+> 🤖 AI エージェント（Amazon Q, GitHub Copilot, Cursor 等）での操作を推奨しています。詳細は [CLAUDE.md](CLAUDE.md) を参照してください。
 
-[Insighta Cloud](https://insighta.cloud) へのポートフォリオ一括登録を支援するCLIツールです。
-証券会社の取引データから注文を抽出し、検証・分析したうえで Insighta API へまとめてアップロードできます。
+[insighta cloud](https://insighta.cloud) へのポートフォリオ一括登録を支援するCLIツールです。
+証券会社の取引データから注文を抽出し、検証・分析したうえで insighta cloud API へまとめてアップロードできます。
 
 ![upload preview](docs/images/upload-preview.png)
 
 - **パース**: `input/sbi/` にファイルを置くだけで自動分類・CSV変換
 - **検証**: CSV集計と実際の保有状況の照合
 - **分析**: 実現/未実現損益・総合ROI
-- **アップロード**: Insighta API へポートフォリオデータを一括送信
+- **アップロード**: insighta cloud API へポートフォリオデータを一括送信
 - **API管理**: ポートフォリオ一覧・検索・削除・NAV/メトリクス履歴取得
 
 > ⚠️ 現在はSBI証券の海外株式口座のみ対応しています。
@@ -19,7 +19,7 @@
 ## このツールはこんな方向けです
 
 - SBI証券で海外株式を取引している個人投資家
-- 取引履歴を [Insighta Cloud](https://insighta.cloud) で一元管理したい方
+- 取引履歴を [insighta cloud](https://insighta.cloud) で一元管理したい方
 - 手動でのポートフォリオ登録が面倒な方
 
 ## 注意事項
@@ -45,22 +45,22 @@ pip install .
 
 ## 2. API キーの設定
 
-Insighta API へのアップロード機能を使う場合に必要です（ローカル分析のみなら不要）。
+insighta cloud API へのアップロード機能を使う場合に必要です（ローカル分析のみなら不要）。
 
 ```bash
-cp templates/credentials.yaml credentials.yaml
+cp templates/config.yaml config.yaml
 ```
 
-`credentials.yaml` を開いて API キーを設定します。
+`config.yaml` を開いて API キーとロケールを設定します。
 API キーは https://insighta.cloud/settings から取得できます。
 
-設定後、パスを保存しておくと毎回指定する必要がなくなります:
-
-```bash
-insighta config --credentials credentials.yaml
+```yaml
+locale: ja
+api_key: "your-api-key-here"
+endpoint: "https://openapi.insighta.cloud"
 ```
 
-> ⚠️ `credentials.yaml` には秘密情報が含まれます。`.gitignore` に追加済みですが、公開リポジトリへのコミットにご注意ください。
+> ⚠️ `config.yaml` には秘密情報が含まれます。`.gitignore` に追加済みですが、公開リポジトリへのコミットにご注意ください。
 
 ## 3. データの準備
 
@@ -101,16 +101,45 @@ insighta config --credentials credentials.yaml
 
 | ファイル | 配置先 | 用途 |
 |----------|--------|------|
-| seed.csv | `input/manual/seed.csv` | ツール導入前の保有銘柄 |
-| rate.csv | `input/rate.csv` | 期間別為替レート |
-| ratio.csv | `input/ratio.csv` | 銘柄別ポートフォリオ比率 |
+| seed.csv | `workspaces/<name>/input/manual/seed.csv` | ツール導入前の保有銘柄 |
+| rate.csv | `workspaces/<name>/input/rate.csv` | 期間別為替レート |
+| ratio.csv | `workspaces/<name>/input/ratio.csv` | 銘柄別ポートフォリオ比率 |
+| project.yaml | `workspaces/<name>/input/project.yaml` | ポートフォリオ設定 |
+
+### project.yaml
+
+ポートフォリオのメタデータを事前に定義できます。`prepare` / `wizard` 実行時に自動で読み込まれ、CLI オプションで個別にオーバーライド可能です。
+
+```bash
+cp templates/project.yaml workspaces/<name>/input/project.yaml
+```
+
+```yaml
+name: "米国株 長期成長+高配当"
+description: |
+  ## 運用方針
+  - コア: SPY + QQQ
+  - 配当: SPYD
+currency: JPY
+budget: 500000
+target_return: 0.1
+start_date: "2025-01-01"
+target_date: "2035-01-01"
+ratio:
+  SPY: 0.4
+  QQQ: 0.3
+  AAPL: 0.2
+```
+
+> 💡 `ratio` を定義すると `input/ratio.csv` より優先されます。どちらもない場合は全銘柄均等配分になります。
+
 
 ## 4. Quick Start
 
 `--work` オプションで作業ディレクトリを指定します。各ポートフォリオのデータは `workspaces/<name>/` 以下に格納されます。
 
 ```bash
-insighta --work sbi-us-stocks
+insighta --work <name>
 ```
 
 引数なしで実行すると、対話式ウィザードが データ配置 → パース → 検証 → アップロード まで順番に案内します。
@@ -128,13 +157,13 @@ insighta --work sbi-us-stocks
 | `insighta --work <name> verify` | CSV集計 vs 保有銘柄HTMLの照合 |
 | `insighta --work <name> analyze` | 実現/未実現損益 + 総合ROI |
 | `insighta --work <name> prepare` | アップロード用ファイル生成（`upload.yaml` + `order.csv`） |
-| `insighta --work <name> upload` | Insighta API へポートフォリオデータを送信 |
+| `insighta --work <name> upload` | insighta cloud API へポートフォリオデータを送信 |
 
 ### API管理
 
 | コマンド | 説明 |
 |---------|------|
-| `insighta config --credentials <path>` | credentials パスを保存 |
+| `insighta config` | config.yaml の設定内容を表示 |
 | `insighta list-portfolios` | 自分のポートフォリオ一覧を取得 |
 | `insighta search-portfolios --search <keyword>` | 公開ポートフォリオを検索 |
 | `insighta delete-portfolio <id> -y` | ポートフォリオを削除 |
@@ -146,9 +175,9 @@ insighta --work sbi-us-stocks
 ### 使用例
 
 ```bash
-insighta --work sbi-us-stocks parse --rate 155                    # 固定為替レート指定
-insighta --work sbi-us-stocks parse --rate-file input/rate.csv    # 期間別為替レートCSV
-insighta --work sbi-us-stocks upload --config workspaces/sbi-us-stocks/output/upload.yaml -y
+insighta --work <name> parse --rate 155                    # 固定為替レート指定
+insighta --work <name> parse --rate-file input/rate.csv    # 期間別為替レートCSV
+insighta --work <name> upload --config workspaces/<name>/output/upload.yaml -y
 ```
 
 > **初期予算の目安**: 全注文の購入コスト合計をカバーできる金額を設定してください。
@@ -158,7 +187,7 @@ insighta --work sbi-us-stocks upload --config workspaces/sbi-us-stocks/output/up
 
 ## 6. ポートフォリオ名・説明・注文メモの書き方
 
-Insighta Cloud のポートフォリオは **運用記録** です。
+insighta cloud のポートフォリオは **運用記録** です。
 名前・説明・注文メモには「何を買った/売った」ではなく、**どういう方針で運用しているか** を記載してください。
 
 ### ポートフォリオ名
@@ -250,7 +279,7 @@ AAPL,0.2
 
 ## Support
 
-不明な点があれば Discord でお気軽にご連絡ください: `cho05134`
+不明な点があれば Discord でお気軽にご連絡ください: `insighta_cloud`
 
 ## Disclaimer
 

@@ -5,7 +5,7 @@
 
 ## Overview
 
-証券会社の取引データ → 自動分類・パース → CSV → Insighta API アップロードを行う CLI ツール。
+証券会社の取引データ → 自動分類・パース → CSV → insighta cloud API アップロードを行う CLI ツール。
 `--non-interactive` (`-ni`) フラグで全プロンプトをスキップし、オプションのみで実行できます。
 
 ## Project Structure
@@ -14,10 +14,9 @@
 insighta-cli/
 ├── sbi/
 │   ├── cli.py          # CLI エントリポイント (rich-click)
-│   ├── parser.py       # レガシーパーサー + ユーティリティ (Dirs, Trade, Holding, Deposit)
-│   ├── parser_v2.py    # input/sbi/ 自動認識パーサー (メイン)
+│   ├── parser.py       # 自動認識パーサー (Dirs, Trade, Holding, Deposit, process_sbi_dir)
 │   ├── analyzer.py     # 損益・ROI 計算
-│   ├── api.py          # Insighta OpenAPI クライアント
+│   ├── api.py          # insighta cloud OpenAPI クライアント
 │   └── i18n.py         # 多言語メッセージ (ja/ko)
 ├── workspaces/
 │   └── <name>/             # --work で指定する作業ディレクトリ
@@ -25,7 +24,8 @@ insighta-cli/
 │       │   ├── sbi/               # 全ファイルをここに配置 (自動分類)
 │       │   ├── manual/            # 手動入力 (seed.csv 等)
 │       │   ├── rate.csv           # 期間別為替レート (任意)
-│       │   └── ratio.csv          # 銘柄別ポートフォリオ比率 (任意)
+│       │   ├── ratio.csv          # 銘柄別ポートフォリオ比率 (任意)
+│       │   └── project.yaml       # ポートフォリオ設定 (CLIオプションでオーバーライド可)
 │       ├── output/
 │       │   ├── history.csv        # parse 結果
 │       │   ├── order.csv          # prepare 結果 (注文グループ、キー: group_dt)
@@ -33,8 +33,8 @@ insighta-cli/
 │       │   ├── upload.yaml        # prepare 結果 (ポートフォリオ設定)
 │       │   └── memo.csv           # グループ別メモ (prepare 対話入力 or AI 生成)
 │       └── .cache/                # パース済みキャッシュ (UTF-8)
-├── templates/          # CSV/YAML テンプレート
-├── credentials.yaml    # API キー (gitignore済み)
+├── templates/          # テンプレート (config.yaml, project.yaml, seed.csv, rate.csv, ratio.csv, memo.csv)
+├── config.yaml         # 設定ファイル (gitignore済み)
 └── main.py             # python main.py で実行可能
 ```
 
@@ -43,14 +43,16 @@ insighta-cli/
 ```
 Step 1: input/sbi/ にファイル配置 (CSV/HTML を自動分類)
     ↓
+Step 1.5: input/rate.csv 配置 (JPY決済の海外株式取引がある場合は必須)
+    ↓
 Step 2: parse (自動分類 → output/history.csv) + verify (任意)
     ↓
 Step 3: prepare (output/history.csv → output/upload.yaml + output/order.csv + output/cash_deposits.csv + output/memo.csv)
     ↓
-Step 4: upload (upload.yaml → Insighta API)
+Step 4: upload (upload.yaml → insighta cloud API)
 ```
 
-## Auto-Classification (parser_v2)
+## Auto-Classification
 
 `input/sbi/` に配置されたファイルは以下のルールで自動分類されます:
 
@@ -70,7 +72,7 @@ Step 4: upload (upload.yaml → Insighta API)
 ### Full pipeline (wizard)
 
 ```bash
-insighta --work sbi-us-stocks wizard --non-interactive \
+insighta --work <name> wizard --non-interactive \
   --name "My Portfolio" \
   --description "Imported from SBI" \
   --currency JPY \
@@ -78,7 +80,6 @@ insighta --work sbi-us-stocks wizard --non-interactive \
   --target-return 0.1 \
   --start-date 2025-01-01 \
   --target-date 2030-01-01 \
-  --credentials credentials.yaml \
   --output-json
 ```
 
@@ -86,22 +87,22 @@ insighta --work sbi-us-stocks wizard --non-interactive \
 
 ```bash
 # Step 2: parse
-insighta --work sbi-us-stocks parse --rate 155
-insighta --work sbi-us-stocks parse --rate-file input/rate.csv
+insighta --work <name> parse --rate 155
+insighta --work <name> parse --rate-file input/rate.csv
 
 # Step 2: verify
-insighta --work sbi-us-stocks verify
+insighta --work <name> verify
 
 # Step 3: prepare (non-interactive)
-insighta --work sbi-us-stocks prepare \
+insighta --work <name> prepare \
   --non-interactive \
   --name "My Portfolio" \
   --currency JPY \
   --budget 100000
 
 # Step 4: upload
-insighta --work sbi-us-stocks upload \
-  --config workspaces/sbi-us-stocks/output/upload.yaml \
+insighta --work <name> upload \
+  --config workspaces/<name>/output/upload.yaml \
   --yes \
   --output-json
 ```
@@ -118,44 +119,38 @@ insighta --work sbi-us-stocks upload \
 | `--target-return` | float | 0.1 | 目標リターン (%) |
 | `--start-date` | str | 最初の注文/配当日 | 開始日 (YYYY-MM-DD) |
 | `--target-date` | str | start-date + 10y | 目標日 (YYYY-MM-DD) |
-| `--credentials` | str | 保存済みパス or "credentials.yaml" | API キーファイルパス |
 | `--output-json` | flag | false | 結果を JSON で stdout 出力 |
+
+> 💡 `workspaces/<name>/input/project.yaml` にポートフォリオ設定を定義しておけば、上記オプションは省略可能です。CLIオプションは project.yaml の値をオーバーライドします。
 
 > **予算の目安**: `workspaces/<name>/output/order.csv` の全注文コストを合算して算出してください。
 > ポートフォリオ通貨が JPY の場合、USD 建て注文は `price × quantity × rate` で円換算し、
 > JPY 建て注文と合計した金額を予算に設定します。rate が空の注文は直近の rate.csv の値で概算してください。
 
-## Credentials
+## Config
 
-`--credentials` を省略した場合、以下の順で自動解決されます:
-
-1. `insighta config --credentials <path>` で保存済みのパス
-2. 見つからない場合はエラー
+プロジェクトルートの `config.yaml` から locale / api_key / endpoint を読み込みます。
 
 ```bash
-# 一度保存すれば以降は --credentials 不要
-insighta config --credentials credentials.yaml
+cp templates/config.yaml config.yaml
 ```
 
-### credentials.yaml format
-
-```yaml
-api_key: "your-api-key-here"
-endpoint: "https://openapi.insighta.cloud"
+```bash
+# 設定内容を確認
+insighta config
 ```
 
 ## API Management Commands
 
 | Command | Description |
 |---------|-------------|
-| `insighta config --credentials <path>` | credentials パスを保存 |
 | `insighta list-portfolios` | 自分のポートフォリオ一覧を取得 |
 | `insighta search-portfolios --search <keyword>` | 公開ポートフォリオを検索 |
 | `insighta delete-portfolio <id> -y` | ポートフォリオを削除 |
 | `insighta nav-history <id>` | NAV履歴を取得 |
 | `insighta metrics-history <id> --metrics twr` | メトリクス履歴を取得 |
 
-すべて `--output-json` フラグで JSON 出力に対応。`--credentials` は config 保存済みなら省略可。
+すべて `--output-json` フラグで JSON 出力に対応。
 
 ```bash
 # 例
@@ -220,16 +215,17 @@ order_group,memo
 ### AI ワークフロー
 
 ```bash
-# 1. prepare で order.csv + cash_deposits.csv 生成
-insighta --work sbi-us-stocks prepare -ni --name "My Portfolio" --currency JPY --budget 100000
+# 1. project.yaml を配置 (オプション指定が不要になる)
+cp templates/project.yaml workspaces/<name>/input/project.yaml
+# Edit project.yaml with portfolio settings
 
-# 2. workspaces/sbi-us-stocks/output/order.csv + cash_deposits.csv を見て memo.csv を作成
+# 2. prepare で order.csv + cash_deposits.csv 生成
+insighta --work <name> prepare -ni
 
-# 3. upload (workspaces/sbi-us-stocks/output/memo.csv を自動読み込み)
-insighta --work sbi-us-stocks upload --config workspaces/sbi-us-stocks/output/upload.yaml -y
+# 3. workspaces/<name>/output/order.csv + cash_deposits.csv を見て memo.csv を作成
 
-# または別ファイルを指定
-insighta --work sbi-us-stocks upload --config workspaces/sbi-us-stocks/output/upload.yaml --memo-file workspaces/sbi-us-stocks/output/memo.csv -y
+# 4. upload (workspaces/<name>/output/memo.csv を自動読み込み)
+insighta --work <name> upload --config workspaces/<name>/output/upload.yaml -y
 ```
 
 ## JSON Output
@@ -266,7 +262,7 @@ rm workspaces/<name>/output/history.csv workspaces/<name>/output/order.csv works
 
 - Python >= 3.10
 - `workspaces/<name>/input/sbi/` に最低1つの約定履歴CSV or 取引履歴HTML
-- アップロードする場合: `credentials.yaml` に有効な API キー
+- アップロードする場合: `config.yaml` に有効な API キー
 
 ### Install
 
@@ -287,30 +283,28 @@ pip install git+https://github.com/insighta-cloud/insighta-cli.git
 # 1. Install
 pip install git+https://github.com/insighta-cloud/insighta-cli.git
 
-# 2. Setup credentials
-cp templates/credentials.yaml credentials.yaml
-# Edit credentials.yaml with valid API key
-insighta config --credentials credentials.yaml
+# 2. Setup config
+cp templates/config.yaml config.yaml
+# Edit config.yaml with valid API key
 
 # 3. Ensure input files exist
-ls workspaces/sbi-us-stocks/input/sbi/
+ls workspaces/<name>/input/sbi/
 
-# 4. Run full pipeline
-insighta --work sbi-us-stocks wizard -ni \
-  --name "米国株 長期成長+高配当" \
-  --description "## 運用方針\n- コア: SPY+QQQ\n- 配当: SPYD\n- 目標: 年率10%" \
-  --currency JPY \
-  --budget 500000 \
-  --output-json
+# 4. Setup project.yaml (optional, replaces CLI options)
+cp templates/project.yaml workspaces/<name>/input/project.yaml
+# Edit project.yaml
 
-# 5. workspaces/sbi-us-stocks/output/order.csv + cash_deposits.csv を見て memo.csv を作成
+# 5. Run full pipeline (project.yaml があれば --name 等は省略可)
+insighta --work <name> wizard -ni --output-json
 
-# 6. upload (workspaces/sbi-us-stocks/output/memo.csv を自動読み込み)
-insighta --work sbi-us-stocks upload \
-  --config workspaces/sbi-us-stocks/output/upload.yaml \
+# 6. workspaces/<name>/output/order.csv + cash_deposits.csv を見て memo.csv を作成
+
+# 7. upload (workspaces/<name>/output/memo.csv を自動読み込み)
+insighta --work <name> upload \
+  --config workspaces/<name>/output/upload.yaml \
   -y --output-json
 
-# 7. Parse JSON result from stdout
+# 8. Parse JSON result from stdout
 # {"status": "success", "portfolio_id": "...", "url": "...", ...}
 ```
 
@@ -321,8 +315,8 @@ insighta --work sbi-us-stocks upload \
 | `No files found in input/sbi/` | `input/sbi/` が空 | ファイルを配置 |
 | `分類不能: xxx` | 未対応ファイル形式 | ファイル内容を確認、対応形式か確認 |
 | `注文データが見つかりません` | `output/order.csv` が空 | parse → prepare を再実行 |
-| `401 Unauthorized` | API キーが無効 | `credentials.yaml` を確認 |
-| `credentials が未指定です` | config 未保存 & --credentials 未指定 | `insighta config --credentials <path>` で保存 |
+| `401 Unauthorized` | API キーが無効 | `config.yaml` を確認 |
+| `api_key が config.yaml に設定されていません` | config.yaml 未設定 | `cp templates/config.yaml config.yaml` で作成 |
 | verify で差分あり | 履歴期間不足 or seed 不足 | CSV 追加 or `input/manual/seed.csv` に追加 |
 | 残高不足区間が表示される | 為替入金データ不足 | 為替取引CSVを `input/sbi/` に追加 |
 | USD 残高が合わない | 配当金が JPY で計上されている | 外貨入出金明細CSVを `input/sbi/` に追加 |

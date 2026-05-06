@@ -1,3 +1,8 @@
+# Insighta CLI configuration
+# Copy this file to the project root as config.yaml and edit.
+
+locale: ja
+
 # Insighta API credentials
 # Get your API key from: https://insighta.cloud/settings
 api_key: "your-api-key-here"
