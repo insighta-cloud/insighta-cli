@@ -59,12 +59,13 @@ def parse(obj, rate, rate_file):
                 rate_file = candidate
                 break
 
-    from .parser import process_sbi_dir, load_manual_deposits
+    from .parser import process_sbi_dir, load_manual_deposits, load_seed_as_trades
     cache_dir = _os.path.join(dirs._base or ".", ".cache")
     result = process_sbi_dir(dirs.sbi, rate_file=rate_file)
+    seed_result = load_seed_as_trades(dirs.manual, rates=load_rate_file(rate_file) if rate_file else [])
+    result.deposits.extend(seed_result.deposits)
     for d in load_manual_deposits(dirs.manual):
         result.deposits.append(d)
-    result.deposits, dup = result.deposits, []
     from .parser import _dedup_deposits, _save_cache
     result.deposits, dup2 = _dedup_deposits(result.deposits)
     result.skipped.extend(dup2)
@@ -77,10 +78,10 @@ def parse(obj, rate, rate_file):
     deduped = sorted(result.trades, key=lambda t: t.dt, reverse=True)
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["dt", "ticker", "qty", "acct", "price", "avg", "cur", "base", "rate"])
+        w.writerow(["dt", "ticker", "qty", "acct", "price", "avg", "cur", "base", "rate", "settle"])
         for t in deduped:
             r = lookup_rate(rates, t.dt, t.cur, t.base) if rates else (rate if t.cur != t.base else "")
-            w.writerow([t.dt, t.ticker, t.qty, t.acct, t.price, t.avg, t.cur, t.base, r or ""])
+            w.writerow([t.dt, t.ticker, t.qty, t.acct, t.price, t.avg, t.cur, t.base, r or "", t.settle if t.settle is not None else ""])
 
     # deposits を .cache ディレクトリに保存
     _os.makedirs(dirs.cache, exist_ok=True)
@@ -128,7 +129,9 @@ def _run_verify(dirs) -> bool:
             rate_file = candidate
             break
     _v2_result = process_sbi_dir(dirs.sbi, rate_file=rate_file)
-    from .parser import load_manual_deposits, _dedup_deposits
+    from .parser import load_manual_deposits, load_seed_as_trades, _dedup_deposits, load_rate_file as _load_rate_file
+    seed_result = load_seed_as_trades(dirs.manual, rates=_load_rate_file(rate_file) if rate_file else [])
+    _v2_result.deposits.extend(seed_result.deposits)
     for d in load_manual_deposits(dirs.manual):
         _v2_result.deposits.append(d)
     _v2_result.deposits, _ = _dedup_deposits(_v2_result.deposits)

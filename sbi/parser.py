@@ -163,6 +163,7 @@ class Trade:
     avg: Decimal
     cur: str         # 決済通貨 (JPY or USD)
     base: str = "USD"  # 銘柄の基準通貨
+    settle: Decimal | None = None  # 受渡金額
 
 
 @dataclass
@@ -668,6 +669,7 @@ def _parse_yakujo_csv(filepath: str, rates=None) -> ParseResult:
             dt=dt_iso, ticker=ticker,
             qty=qty if is_buy else -qty,
             acct=acct, price=price, avg=price, cur=cur, base=base,
+            settle=settle,
         ))
 
         calc = price * qty
@@ -839,6 +841,52 @@ def _save_cache(result: ParseResult, cache_dir: str):
     if result.warnings:
         with open(os.path.join(cache_dir, "warnings.txt"), "w", encoding="utf-8") as f:
             f.write("\n".join(result.warnings))
+
+
+def load_seed_as_trades(manual_dir: str, rates=None) -> ParseResult:
+    """input/manual/seed.csv を Trade + fee Deposit に変換。"""
+    fp = os.path.join(manual_dir, "seed.csv")
+    if not os.path.exists(fp):
+        return ParseResult()
+    result = ParseResult()
+    with open(fp, encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            dt_iso = _to_jst_iso(row["dt"].strip())
+            ticker = row["ticker"].strip()
+            qty = int(row["qty"])
+            price = Decimal(row.get("avg") or row.get("price") or "0")
+            cur = row.get("cur", "USD").strip()
+            base = row.get("base", "USD").strip()
+            rate_str = (row.get("rate") or "").strip()
+            settle_str = (row.get("settle") or "").strip()
+            acct = row.get("acct", "").strip()
+
+            rate = Decimal(rate_str) if rate_str else None
+            if not rate and rates:
+                rate = lookup_rate(rates, dt_iso, cur, base)
+
+            result.trades.append(Trade(
+                dt=dt_iso, ticker=ticker, qty=qty, acct=acct,
+                price=price, avg=price, cur=cur, base=base,
+                settle=Decimal(settle_str) if settle_str else None,
+            ))
+
+            if not settle_str:
+                continue
+            settle = Decimal(settle_str)
+            calc = price * qty
+            if cur == "USD":
+                fee = settle - calc
+            elif rate:
+                fee = settle - calc * rate
+            else:
+                continue
+            if fee != 0:
+                result.deposits.append(Deposit(
+                    dt=dt_iso, amount=-fee, cur=cur,
+                    type="budget", ticker=f"fee:{ticker}",
+                ))
+    return result
 
 
 def load_manual_deposits(manual_dir: str) -> list[Deposit]:
