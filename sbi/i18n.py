@@ -262,6 +262,16 @@ def load_endpoint() -> str | None:
     return _load_config().get("endpoint")
 
 
+def load_workspace() -> str:
+    return _load_config().get("workspace", "")
+
+
+def save_workspace(name: str):
+    data = _load_config()
+    data["workspace"] = name
+    _save_config(data)
+
+
 def msg(locale: str) -> dict:
     """指定localeのメッセージ辞書を返す。"""
     return MESSAGES.get(locale, MESSAGES["ja"])

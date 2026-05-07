@@ -1,6 +1,7 @@
 """Insighta OpenAPI client."""
 
 import csv
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -8,6 +9,12 @@ from decimal import Decimal
 
 import requests
 import yaml
+
+
+def _group_hash(group_dt: str, settle_currency: str) -> str:
+    """(group_dt, settle_currency) → 8-char SHA256 prefix."""
+    key = f"{group_dt}|{settle_currency}"
+    return hashlib.sha256(key.encode()).hexdigest()[:8]
 
 
 log = logging.getLogger(__name__)
@@ -123,7 +130,7 @@ def load_order_groups(filepath: str) -> list[OrderGroup]:
             key = (gdt, settle_cur)
             if key not in groups:
                 groups[key] = OrderGroup(
-                    group_id=gdt,
+                    group_id=_group_hash(gdt, settle_cur),
                     currency=settle_cur,
                     exchange_rate=float(rate_val) if rate_val else None,
                 )
@@ -171,7 +178,7 @@ def merge_and_sort_groups(orders: list[OrderGroup], deposits_by_gdt: dict[str, l
             by_cur.setdefault(c, []).append(d)
         for cur, cur_deps in by_cur.items():
             if gdt not in existing_curs or cur not in existing_curs[gdt]:
-                g = OrderGroup(group_id=gdt, currency=cur)
+                g = OrderGroup(group_id=_group_hash(gdt, cur), currency=cur)
                 g.cash_deposits = cur_deps
                 orders.append(g)
                 existing_curs.setdefault(gdt, set()).add(cur)
@@ -187,9 +194,7 @@ def merge_and_sort_groups(orders: list[OrderGroup], deposits_by_gdt: dict[str, l
         ts = _parse_timestamp(g.group_id)
         return ts if ts is not None else float("inf")
     orders.sort(key=_sort_key)
-    # 순번 배정 후 메모 적용
-    for i, g in enumerate(orders, 1):
-        g.group_id = str(i)
+    # 메모 적용
     for g in orders:
         if g.group_id in memos:
             g.memo = memos[g.group_id]

@@ -153,12 +153,15 @@ insighta --work <name>
 
 | コマンド | 説明 |
 |---------|------|
+| `insighta workspace <name>` | デフォルト作業ディレクトリを設定 |
 | `insighta --work <name>` | 対話式ウィザード（全ステップ一括） |
 | `insighta --work <name> parse` | `input/sbi/` を自動分類・パース → `output/history.csv` |
 | `insighta --work <name> verify` | CSV集計 vs 保有銘柄HTMLの照合 |
 | `insighta --work <name> analyze` | 実現/未実現損益 + 総合ROI |
 | `insighta --work <name> prepare` | アップロード用ファイル生成（`upload.yaml` + `order.csv`） |
 | `insighta --work <name> upload` | insighta cloud API へポートフォリオデータを送信 |
+
+> 💡 `insighta workspace <name>` で作業ディレクトリを設定すると、以降は `--work` を省略できます。
 
 ### API管理
 
@@ -176,9 +179,11 @@ insighta --work <name>
 ### 使用例
 
 ```bash
+insighta workspace <name>                                  # デフォルト作業ディレクトリを設定
 insighta --work <name> parse --rate 155                    # 固定為替レート指定
 insighta --work <name> parse --rate-file input/rate.csv    # 期間別為替レートCSV
-insighta --work <name> upload --config workspaces/<name>/output/upload.yaml -y
+insighta upload -y                                         # workspace 設定済みなら --work 不要
+insighta upload -y --dry-run                               # ドライラン（API送信なし）
 ```
 
 > **初期予算の目安**: 全注文の購入コスト合計をカバーできる金額を設定してください。

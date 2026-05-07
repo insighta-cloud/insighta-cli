@@ -34,6 +34,9 @@ def cli(ctx, debug, work):
         datefmt="%H:%M:%S",
     )
     ctx.ensure_object(dict)
+    if not work:
+        from .i18n import load_workspace
+        work = load_workspace()
     ctx.obj["dirs"] = Dirs.from_work(work)
     if ctx.invoked_subcommand is None:
         ctx.invoke(wizard)
@@ -557,9 +560,11 @@ def prepare(obj, locale, history_file, seed_file, rate_file, non_interactive,
     order_out = dirs.order_csv
     with open(order_out, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["group_dt", "ticker", "quantity", "price", "currency", "settle_currency", "rate", "price_type", "timestamp"])
+        w.writerow(["group_id", "group_dt", "ticker", "quantity", "price", "currency", "settle_currency", "rate", "price_type", "timestamp"])
         for row in order_rows:
+            from .api import _group_hash
             w.writerow([
+                _group_hash(row["group_dt"], row["settle_currency"]),
                 row["group_dt"], row["ticker"], row["quantity"],
                 row["price"], row["currency"], row["settle_currency"], row["rate"], row["price_type"], row["timestamp"],
             ])
@@ -686,7 +691,7 @@ def prepare(obj, locale, history_file, seed_file, rate_file, non_interactive,
     group_memos: dict[str, str] = {}
     for g in preview_groups:
         console.rule()
-        preview = Table(title=f"Group {g.group_id}/{total_groups}  ({g.currency})", show_lines=False)
+        preview = Table(title=f"[{g.group_id}]  {g.currency}", show_lines=False)
         preview.add_column("Ticker")
         preview.add_column("Qty", justify="right")
         preview.add_column("Price", justify="right")
@@ -761,13 +766,14 @@ def prepare(obj, locale, history_file, seed_file, rate_file, non_interactive,
 
 
 @cli.command()
-@click.option("--config", required=True, help="Path to upload.yaml (default: output/upload.yaml)")
+@click.option("--config", default="", help="Path to upload.yaml (default: output/upload.yaml)")
 @click.option("--yes", "-y", is_flag=True, help="確認プロンプトをスキップ")
 @click.option("--lang", default="ja", hidden=True)
 @click.option("--memo-file", default="", help="グループ別メモCSV (order_group,memo)")
 @click.option("--output-json", is_flag=True, help="結果をJSONで出力")
+@click.option("--dry-run", is_flag=True, help="API送信せずにペイロードを表示")
 @click.pass_obj
-def upload(obj, config, yes, lang, memo_file, output_json):
+def upload(obj, config, yes, lang, memo_file, output_json, dry_run):
     """アップロード: upload.yaml + order.csvをInsighta APIに送信する。"""
     from rich.table import Table
     from rich.panel import Panel
@@ -778,7 +784,7 @@ def upload(obj, config, yes, lang, memo_file, output_json):
     dirs.ensure_output()
 
     creds = Credentials.from_config()
-    upload_cfg = UploadConfig.from_file(config)
+    upload_cfg = UploadConfig.from_file(config or dirs.upload_yaml)
     client = InsightaClient(creds, output_dir=dirs.output)
 
     memo_path = memo_file or upload_cfg.memo_file
@@ -833,6 +839,18 @@ def upload(obj, config, yes, lang, memo_file, output_json):
 
     if not yes and not click.confirm("アップロードを実行しますか？"):
         console.print("[yellow]中断しました。[/yellow]")
+        return
+
+    if dry_run:
+        import json as _json
+        console.print("[yellow]-- DRY RUN: API送信はスキップされます --[/yellow]")
+        console.print(f"Portfolio: {upload_cfg.name}  currency={upload_cfg.currency}  budget={upload_cfg.budget}")
+        for i, g in enumerate(groups, 1):
+            console.print(f"\n[bold]Group {i}/{len(groups)}[/bold]  id={g.group_id}  cur={g.currency}  memo={g.memo or '-'}")
+            for item in g.items:
+                console.print(f"  {item['ticker']:8} qty={item['quantity']:+g}  price={item['price']}")
+            for d in g.cash_deposits:
+                console.print(f"  [{d.type}] {d.ticker or ''}  {d.amount:+,.4f} {d.currency}")
         return
 
     # ポートフォリオ作成
@@ -1222,6 +1240,28 @@ def config():
     for k, v in data.items():
         display_v = v if k != "api_key" else (v[:4] + "****" + v[-4:] if len(str(v)) > 8 else "****")
         console.print(f"  {k}: [dim]{display_v}[/dim]")
+
+
+@cli.command()
+@click.argument("name", required=False, default="")
+def workspace(name):
+    """現在の作業ワークスペースを設定・表示する。
+
+    \b
+    Examples:
+      insighta workspace sbi-us-stocks2   # set workspace
+      insighta workspace                  # show current workspace
+    """
+    from .i18n import load_workspace, save_workspace
+    if name:
+        save_workspace(name)
+        console.print(f"[green]Workspace set to:[/green] {name}")
+    else:
+        current = load_workspace()
+        if current:
+            console.print(f"Current workspace: [bold]{current}[/bold]")
+        else:
+            console.print("[dim]No workspace set. Use: insighta workspace <name>[/dim]")
 
 
 @cli.command("list-portfolios")

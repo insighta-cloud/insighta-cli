@@ -108,6 +108,9 @@ insighta --work <name> wizard --non-interactive \
 ### Individual commands
 
 ```bash
+# Set default workspace (then --work can be omitted)
+insighta workspace <name>
+
 # Step 2: parse
 insighta --work <name> parse --rate 155
 insighta --work <name> parse --rate-file input/rate.csv
@@ -122,11 +125,9 @@ insighta --work <name> prepare \
   --currency JPY \
   --budget 0
 
-# Step 4: upload
-insighta --work <name> upload \
-  --config workspaces/<name>/output/upload.yaml \
-  --yes \
-  --output-json
+# Step 4: upload (--work can be omitted if workspace is set)
+insighta upload --yes
+insighta upload --yes --dry-run   # dry run — no API calls
 ```
 
 ## Wizard Options
@@ -336,9 +337,8 @@ insighta --work <name> wizard -ni --output-json
 #    then create workspaces/<name>/output/memo.csv with investment rationale per group.
 
 # 7. Upload (memo.csv is loaded automatically)
-insighta --work <name> upload \
-  --config workspaces/<name>/output/upload.yaml \
-  -y --output-json
+insighta workspace <name>   # set default workspace
+insighta upload -y --output-json
 
 # 8. Parse JSON result from stdout
 # {"status": "success", "portfolio_id": "...", "url": "...", ...}
