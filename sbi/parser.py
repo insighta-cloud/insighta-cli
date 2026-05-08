@@ -599,7 +599,7 @@ def classify(filepath: str) -> str | None:
         return "currency_exchange"
     if "外貨入出金明細" in text:
         return "deposit_gaika"
-    if "入出金振替操作履歴" in text or "SBIインデックスファンド入出金" in text:
+    if "入出金振替操作履歴" in text:
         return "deposit_transfer"
     if "検索件数" in text and "受渡日" in text:
         return "deposit_dividend"
@@ -709,7 +709,9 @@ def _parse_domestic_fund(filepath: str) -> ParseResult:
 
         if "買" in trade_type:
             amount = -amount
-        elif "売" not in trade_type:
+        elif "売" in trade_type or "解約" in trade_type:
+            pass
+        else:
             continue
 
         meigara = str(row["銘柄"]).strip() if pd.notna(row.get("銘柄")) else ""

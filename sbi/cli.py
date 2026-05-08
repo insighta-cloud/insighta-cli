@@ -395,7 +395,13 @@ def prepare(obj, locale, history_file, seed_file, rate_file, non_interactive,
         if _os.path.exists(candidate):
             _rate_file = candidate
             break
+    from .parser import load_manual_deposits, load_seed_as_trades, _dedup_deposits
     _v2_deposits = process_sbi_dir(dirs.sbi, rate_file=_rate_file).deposits
+    _seed_result = load_seed_as_trades(dirs.manual, rates=load_rate_file(_rate_file) if _rate_file else [])
+    _v2_deposits.extend(_seed_result.deposits)
+    for _md in load_manual_deposits(dirs.manual):
+        _v2_deposits.append(_md)
+    _v2_deposits, _ = _dedup_deposits(_v2_deposits)
 
     # Determine earliest date from orders + deposits
     def _earliest_date() -> str:
